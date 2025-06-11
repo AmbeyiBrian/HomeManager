@@ -104,50 +104,20 @@ class OrganizationRoleViewSet(viewsets.ModelViewSet):
     """ViewSet for viewing and editing OrganizationRole instances"""
     queryset = OrganizationRole.objects.all()
     serializer_class = OrganizationRoleSerializer
-    permission_classes = [IsOrganizationOwnerOrAdmin]
+    permission_classes = [permissions.IsAuthenticated]
     
     def get_queryset(self):
         """
-        Filter roles to only show the user's organization roles.
-        Only global superusers without an organization get all roles.
+        Return all roles without organization filtering.
+        Any authenticated user can access all roles.
         """
-        user = self.request.user
-        
-        # Only allow true system admins (superusers without an organization) to see all roles
-        if user.is_superuser and not user.organization:
-            return OrganizationRole.objects.all()
-        
-        if user.organization:
-            return OrganizationRole.objects.filter(organization=user.organization)
-        return OrganizationRole.objects.none()
-    
+        return OrganizationRole.objects.all()
     def perform_create(self, serializer):
-        """Ensure new roles are associated with the user's organization"""
-        user = self.request.user
-        
-        # Global superusers (without organization) can create roles without restriction
-        if user.is_superuser and not user.organization:
-            serializer.save()
-        # Users (including superusers) with an organization must create roles for their org
-        elif user.organization:
-            serializer.save(organization=user.organization)
-        else:
-            # Edge case: unauthenticated or user without organization
-            raise ValidationError("User must have an organization to create roles")
+        """Create roles without organization restrictions"""
+        serializer.save()
             
     def perform_update(self, serializer):
-        """Ensure roles remain in their original organization and prevent organization switching"""
-        instance = self.get_object()
-        if 'organization' in serializer.validated_data and serializer.validated_data['organization'] != instance.organization:
-            # Only allow superusers to change a role's organization
-            if not self.request.user.is_superuser:
-                raise ValidationError("You cannot change a role's organization")
-        
-        if not self.request.user.is_superuser and self.request.user.organization:
-            # Ensure role stays in the user's organization
-            if instance.organization and instance.organization != self.request.user.organization:
-                raise ValidationError("You cannot update roles from another organization")
-        
+        """Update roles without organization restrictions"""
         serializer.save()
 
 class OrganizationMembershipViewSet(viewsets.ModelViewSet):
