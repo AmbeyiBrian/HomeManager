@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { useApi } from '../hooks/useApi';
+import CacheBanner from '../components/CacheBanner';
 
 const OrganizationManagementScreen = ({ navigation, route }) => {
   // Auth context for organization data and user permissions
@@ -31,10 +32,11 @@ const OrganizationManagementScreen = ({ navigation, route }) => {
     assignRole,
     inviteToOrganization,
     fetchSubscription,
-    isValidSubscription
+    isValidSubscription,
+    rolesLoading
   } = useAuth();
+  
   const { endpoints } = useApi();
-
   // State variables
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -42,7 +44,9 @@ const OrganizationManagementScreen = ({ navigation, route }) => {
   const [subscription, setSubscription] = useState(null);
   const [members, setMembers] = useState([]);
   const [roles, setRoles] = useState([]);
-  const [error, setError] = useState(null);  const [activeTab, setActiveTab] = useState('details');
+  const [error, setError] = useState(null);
+  const [activeTab, setActiveTab] = useState('details');
+  const [organizationFromCache, setOrganizationFromCache] = useState(false);
   
   // Helper function to ensure organization object has the required role information
   const ensureOrganizationRole = (org) => {
@@ -50,7 +54,6 @@ const OrganizationManagementScreen = ({ navigation, route }) => {
     
     // Check if user_role is missing or undefined
     if (org.user_role === undefined || org.user_role === null) {
-      console.log('user_role property missing or null, looking for alternative sources');
       
       // Try to find role information from membership data if available
       if (org.memberships && Array.isArray(org.memberships)) {
@@ -100,10 +103,8 @@ const OrganizationManagementScreen = ({ navigation, route }) => {
   };  // Fetch organization data when screen comes into focus
   useFocusEffect(
     useCallback(() => {
-      console.log('Organization Management screen focused, loading data...');
       loadOrganizationData();
       return () => {
-        console.log('Organization Management screen unfocused');
       };
     }, [])
   );
@@ -120,28 +121,35 @@ const OrganizationManagementScreen = ({ navigation, route }) => {
     setError(null);
     
     try {
+      // First, make sure we have organization data
+      let orgData = null;
+      
       // If we have currentOrganization from AuthContext, use it
       if (currentOrganization) {
         console.log('Using currentOrganization from AuthContext:', currentOrganization);
         const orgWithRole = ensureOrganizationRole(currentOrganization);
         setOrganization(orgWithRole);
+        orgData = orgWithRole;
       } else {
         if (isOffline) {
           // If offline, try to load cached organization
-          const cachedOrg = await getCachedData('user_organization');
-          if (cachedOrg) {
+          const cachedOrg = await getCachedData('user_organization');          if (cachedOrg) {
             const orgWithRole = ensureOrganizationRole(cachedOrg);
             setOrganization(orgWithRole);
+            setOrganizationFromCache(true);
+            orgData = orgWithRole;
           } else {
             setError('No cached organization data found. Please connect to the internet.');
           }
         } else {
           // Use the AuthContext method to fetch the user's organization
           const orgResult = await fetchMyOrganization(isRefreshing);
-          
-          if (orgResult.success) {
+            if (orgResult.success) {
             const orgWithRole = ensureOrganizationRole(orgResult.data);
             setOrganization(orgWithRole);
+            // Set whether the data is from cache
+            setOrganizationFromCache(orgResult.fromCache || false);
+            orgData = orgWithRole;
             // Cache the fetched organization data
             await cacheDataForOffline('user_organization', orgResult.data);
           } else {
@@ -149,23 +157,26 @@ const OrganizationManagementScreen = ({ navigation, route }) => {
           }
         }
       }
-        // Get the organization for further API calls
-      const orgToUse = currentOrganization || organization; // ensure organization is defined
       
-      // Fetch subscription details using AuthContext's fetchSubscription function
-      if (orgToUse && orgToUse.id) { // ensure orgToUse and its id is defined
+      // Now orgData should have the organization we'll use for all subsequent operations
+      console.log('💥 Organization data loaded:', orgData);
+      
+      if (orgData && orgData.id) {
         try {
+          console.log('💥 Calling fetchSubscription with ID:', orgData.id);
           // Use forceRefresh parameter if this is a refresh operation
-          const subscriptionResult = await fetchSubscription(orgToUse.id, isRefreshing);
+          const subscriptionResult = await fetchSubscription(orgData.id, isRefreshing);
+          console.log('💥 fetchSubscription result:', subscriptionResult);
           
           if (subscriptionResult.success) {
+            console.log('💥 Subscription found:', subscriptionResult.data);
             setSubscription(subscriptionResult.data);
             
             if (subscriptionResult.fromCache && !isOffline) {
               console.log('Using cached subscription data, background refresh in progress');
             }
           } else {
-            console.log('No subscription found for this organization');
+            console.log('💥 No subscription found, error:', subscriptionResult.error);
             setSubscription(null);
             
             if (subscriptionResult.error) {
@@ -173,10 +184,12 @@ const OrganizationManagementScreen = ({ navigation, route }) => {
             }
           }
         } catch (subscriptionError) {
-          console.error('Error in subscription fetch flow:', subscriptionError);
+          console.error('💥 CRITICAL ERROR in subscription fetch flow:', subscriptionError);
           // Optionally set an error state for subscription fetching
           setError(subscriptionError?.message || 'An error occurred while fetching subscription details.');
         }
+      } else {
+        console.log('💥 ERROR: Cannot fetch subscription - no organization ID available');
       }
       
       // Fetch organization members using AuthContext
@@ -184,9 +197,9 @@ const OrganizationManagementScreen = ({ navigation, route }) => {
       
       if (membersResult.success) {
         // Filter memberships for current organization (if we have the organization)
-        if (orgToUse && orgToUse.id) { // ensure orgToUse and its id is defined
+        if (orgData && orgData.id) {
           const currentOrgMembers = membersResult.data.filter(
-            (membership) => (membership.organization === orgToUse.id || membership.organization?.id === orgToUse.id)
+            (membership) => (membership.organization === orgData.id || membership.organization?.id === orgData.id)
           );
           setMembers(currentOrgMembers);
         } else {
@@ -198,15 +211,18 @@ const OrganizationManagementScreen = ({ navigation, route }) => {
         }
       } else {
         setError(membersResult.error?.detail || membersResult.error?.message || 'Failed to fetch members.');
-      }
-      
-      // Fetch organization roles using AuthContext
+      }        // Fetch organization roles using AuthContext - similar to subscriptions and members
+      console.log('💥 Fetching roles, isRefreshing:', isRefreshing);
       const rolesResult = await fetchRoles(isRefreshing);
+      console.log('💥 Roles result:', rolesResult);
       
       if (rolesResult.success) {
-        setRoles(rolesResult.data);
+        console.log(rolesResult);
+        console.log('💥 Roles found:', rolesResult.data);
+        setRoles(rolesResult.data || []);
       } else {
-        setError(rolesResult.error?.detail || rolesResult.error?.message || 'Failed to fetch roles.');
+        console.log('💥 Error fetching roles:', rolesResult.error);
+        // Don't set the overall error just for roles - let the UI handle it in the roles tab
       }
       
     } catch (err) {
@@ -216,12 +232,27 @@ const OrganizationManagementScreen = ({ navigation, route }) => {
       setLoading(false);
       setRefreshing(false);
     }
-  };
-
-  // Pull-to-refresh handler
+  };  // Pull-to-refresh handler
   const onRefresh = useCallback(() => {
     loadOrganizationData(true);
   }, []);
+
+  // Effect to ensure roles data is loaded when the roles tab is selected
+  useEffect(() => {
+    // Only fetch roles when the tab is activated and we have no roles data
+    if (activeTab === 'roles' && (!roles || roles.length === 0) && !rolesLoading) {
+      console.log('💥 Roles tab activated but no roles data found, fetching roles...');
+      // Don't use local loading state as it causes render loops - rely only on rolesLoading from context
+      fetchRoles(true).then(result => {
+        console.log('💥 Roles fetch result from tab activation:', result);
+        if (result.success) {
+          setRoles(result.data || []);
+        }
+      }).catch(err => {
+        console.error('💥 Error fetching roles on tab activation:', err);
+      });
+    }
+  }, [activeTab]);  // Only depend on activeTab to prevent infinite re-renders
 
   // Handler for inviting a new user
   const handleInviteUser = () => {
@@ -341,31 +372,25 @@ const OrganizationManagementScreen = ({ navigation, route }) => {
       </View>
     );
   }
-
   return (
     <View style={styles.container}>
       {/* Organization Header */}
       <View style={styles.header}>
-        <ImageBackground
-          source={{ uri: organization?.image || null }}
-          style={styles.headerBackground}
-          imageStyle={styles.headerBackgroundImage}
-        >          <View style={styles.headerOverlay}>
-            <Text style={styles.organizationName}>{organization?.name}</Text>
-            <Text style={styles.organizationDetail}>{organization?.address || 'No address provided'}</Text>
-            <Text style={styles.organizationDetail}>
-              {members?.length || 0} members • Created {organization?.created_at ? new Date(organization.created_at).toLocaleDateString() : 'N/A'}
-            </Text>
-            {organization?.user_role && (
-              <View style={styles.userRoleBadge}>
-                <Ionicons name="shield-checkmark-outline" size={14} color="#fff" style={{marginRight: 4}} />
-                <Text style={styles.userRoleBadgeText}>
-                  Your Role: {organization.user_role}
-                </Text>
-              </View>
-            )}
-          </View>
-        </ImageBackground>
+        <View style={styles.headerContent}>
+          <Text style={styles.organizationName}>{organization?.name}</Text>
+          <Text style={styles.organizationDetail}>{organization?.address || 'No address provided'}</Text>
+          <Text style={styles.organizationDetail}>
+            {members?.length || 0} members • Created {organization?.created_at ? new Date(organization.created_at).toLocaleDateString() : 'N/A'}
+          </Text>
+          {organization?.user_role && (
+            <View style={styles.userRoleBadge}>
+              <Ionicons name="shield-checkmark-outline" size={14} color="#fff" style={{marginRight: 4}} />
+              <Text style={styles.userRoleBadgeText}>
+                Your Role: {organization.user_role}
+              </Text>
+            </View>          )}
+        </View>
+        {organizationFromCache && <CacheBanner visible={true} />}
       </View>
 
       {/* Tab Navigation */}
@@ -580,27 +605,35 @@ const OrganizationManagementScreen = ({ navigation, route }) => {
           <View style={styles.tabContent}>
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Subscription Details</Text>
+                
                 {!subscription || !isValidSubscription(subscription) ? (
-                <View style={styles.emptyState}>
-                  <Ionicons name="card" size={40} color="#ccc" />
-                  <Text style={styles.emptyStateText}>No valid subscription found</Text>
-                  <Text style={styles.emptyStateSubText}>Set up a subscription plan for your organization</Text>
-                  
-                  <TouchableOpacity
-                    style={styles.setupButton}
-                    onPress={handleManageSubscription}
-                  >
-                    <Text style={styles.setupButtonText}>Set Up Subscription</Text>
-                  </TouchableOpacity>
+                <View>
+                  <View style={styles.emptyState}>
+                    <Ionicons name="card" size={40} color="#ccc" />
+                    <Text style={styles.emptyStateText}>No valid subscription found</Text>
+                    <Text style={styles.emptyStateSubText}>Set up a subscription plan for your organization</Text>
+                    
+                    <TouchableOpacity
+                      style={styles.setupButton}
+                      onPress={handleManageSubscription}
+                    >
+                      <Text style={styles.setupButtonText}>Set Up Subscription</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               ) : (
-                <>                  <View style={styles.subscriptionCard}>                    <View style={styles.subscriptionHeader}>
+                <>
+                  <View style={styles.subscriptionCard}>
+                    {/* Header Section - Plan Name & Status */}
+                    <View style={styles.subscriptionHeader}>
                       <Text style={styles.planName}>
-                        {
-                          (subscription.plan && subscription.plan.name) ||
-                          (subscription.plan_details && subscription.plan_details.name) ||
-                          'Subscription Plan'
-                        }
+                        {(() => {
+                          // Get plan details using the most reliable source
+                          const planDetails = subscription.plan_details || 
+                            (typeof subscription.plan === 'object' ? subscription.plan : null);
+                          
+                          return planDetails?.name || 'Subscription Plan';
+                        })()}
                       </Text>
                       <View style={[
                         styles.statusBadge,
@@ -616,20 +649,27 @@ const OrganizationManagementScreen = ({ navigation, route }) => {
                       </View>
                     </View>
                     
+                    {/* Subscription Details Section */}
                     <View style={styles.subscriptionDetails}>
+                      {/* Billing Period Row */}
                       <View style={styles.subscriptionRow}>
                         <Text style={styles.subscriptionLabel}>Billing Period:</Text>
                         <Text style={styles.subscriptionValue}>
                           {subscription.billing_period === 'monthly' ? 'Monthly' : 'Yearly'}
                         </Text>
                       </View>
-                        <View style={styles.subscriptionRow}>
+                      
+                      {/* Start Date Row */}
+                      <View style={styles.subscriptionRow}>
                         <Text style={styles.subscriptionLabel}>Start Date:</Text>
                         <Text style={styles.subscriptionValue}>
-                          {subscription.start_date ? new Date(subscription.start_date).toLocaleDateString() : 'Not specified'}
+                          {subscription.start_date ? 
+                            new Date(subscription.start_date).toLocaleDateString() : 
+                            'Not specified'}
                         </Text>
                       </View>
                       
+                      {/* End Date Row - Only show if exists */}
                       {subscription.end_date && (
                         <View style={styles.subscriptionRow}>
                           <Text style={styles.subscriptionLabel}>End Date:</Text>
@@ -639,6 +679,7 @@ const OrganizationManagementScreen = ({ navigation, route }) => {
                         </View>
                       )}
                       
+                      {/* Trial End Date Row - Only show if exists */}
                       {subscription.trial_end_date && (
                         <View style={styles.subscriptionRow}>
                           <Text style={styles.subscriptionLabel}>Trial Ends:</Text>
@@ -647,110 +688,198 @@ const OrganizationManagementScreen = ({ navigation, route }) => {
                           </Text>
                         </View>
                       )}
-                        <View style={styles.subscriptionRow}>
-                        <Text style={styles.subscriptionLabel}>Amount:</Text>                        <Text style={styles.subscriptionValue}>
+                      
+                      {/* Amount/Price Row */}
+                      <View style={styles.subscriptionRow}>
+                        <Text style={styles.subscriptionLabel}>Amount:</Text>
+                        <Text style={styles.subscriptionValue}>
                           {(() => {
-                            const plan = subscription.plan || subscription.plan_details;
-                            if (!plan) return 'N/A';
-                            
-                            const currency = plan.currency || 'USD';
-                            if (subscription.billing_period === 'monthly') {
-                              return `$${plan.price_monthly || '0'} ${currency}/month`;
-                            } else {
-                              return `$${plan.price_yearly || '0'} ${currency}/year`;
+                            try {
+                              const planDetails = subscription.plan_details || 
+                                (typeof subscription.plan === 'object' ? subscription.plan : null);
+                              
+                              if (!planDetails) return 'N/A';
+                              
+                              const currency = planDetails.currency || 'USD';
+                              if (subscription.billing_period === 'monthly') {
+                                return `${currency} ${planDetails.price_monthly || '0'}/${subscription.billing_period}`;
+                              } else {
+                                return `${currency} ${planDetails.price_yearly || '0'}/${subscription.billing_period}`;
+                              }
+                            } catch (err) {
+                              console.error('Error displaying subscription amount:', err);
+                              return 'N/A';
                             }
                           })()}
                         </Text>
                       </View>
                     </View>
-                      <View style={styles.planFeatures}>
+                    
+                    {/* Plan Features Section */}
+                    <View style={styles.planFeatures}>
                       <Text style={styles.featuresTitle}>Plan Features</Text>
                       
                       {(() => {
-                        const plan = subscription.plan || subscription.plan_details;
-                        if (!plan) return null;
-                        
-                        return (
-                          <>
-                            <View style={styles.featureRow}>
-                              <Ionicons 
-                                name={plan.has_tenant_portal ? "checkmark-circle" : "close-circle"} 
-                                size={20} 
-                                color={plan.has_tenant_portal ? "#27ae60" : "#e74c3c"} 
-                              />
-                              <Text style={styles.featureText}>Tenant Portal</Text>
-                            </View>
-                            
-                            <View style={styles.featureRow}>
-                              <Ionicons 
-                                name={plan.has_payment_processing ? "checkmark-circle" : "close-circle"} 
-                                size={20} 
-                                color={plan.has_payment_processing ? "#27ae60" : "#e74c3c"} 
-                              />
-                              <Text style={styles.featureText}>Payment Processing</Text>
-                            </View>
-                            
-                            <View style={styles.featureRow}>
-                              <Ionicons 
-                                name={plan.has_maintenance_management ? "checkmark-circle" : "close-circle"} 
-                                size={20} 
-                                color={plan.has_maintenance_management ? "#27ae60" : "#e74c3c"} 
-                              />
-                              <Text style={styles.featureText}>Maintenance Management</Text>
-                            </View>
-                            
-                            <View style={styles.featureRow}>
-                              <Ionicons 
-                                name={plan.has_custom_branding ? "checkmark-circle" : "close-circle"} 
-                                size={20} 
-                                color={plan.has_custom_branding ? "#27ae60" : "#e74c3c"} 
-                              />
-                              <Text style={styles.featureText}>Custom Branding</Text>
-                            </View>
-                            
-                            <View style={styles.featureRow}>
-                              <Ionicons 
-                                name={plan.has_api_access ? "checkmark-circle" : "close-circle"} 
-                                size={20} 
-                                color={plan.has_api_access ? "#27ae60" : "#e74c3c"} 
-                              />
-                              <Text style={styles.featureText}>API Access</Text>
-                            </View>
-                          </>
-                        );
+                        try {
+                          const planDetails = subscription.plan_details || 
+                            (typeof subscription.plan === 'object' ? subscription.plan : null);
+                          
+                          if (!planDetails) return (
+                            <Text style={{color: '#666', fontStyle: 'italic', marginTop: 5}}>
+                              Plan feature details not available
+                            </Text>
+                          );
+                          
+                          // Define all possible features with their display names
+                          const features = [
+                            { key: 'has_tenant_portal', name: 'Tenant Portal' },
+                            { key: 'has_payment_processing', name: 'Payment Processing' },
+                            { key: 'has_maintenance_management', name: 'Maintenance Management' },
+                            { key: 'has_custom_branding', name: 'Custom Branding' },
+                            { key: 'has_api_access', name: 'API Access' },
+                            { key: 'has_reporting', name: 'Advanced Reporting' },
+                            { key: 'has_accounting_integration', name: 'Accounting Integration' }
+                          ];
+                          
+                          return (
+                            <>
+                              {features.map(feature => (
+                                // Only render features that are defined in the plan
+                                planDetails[feature.key] !== undefined && (
+                                  <View key={feature.key} style={styles.featureRow}>
+                                    <Ionicons 
+                                      name={planDetails[feature.key] ? "checkmark-circle" : "close-circle"} 
+                                      size={20} 
+                                      color={planDetails[feature.key] ? "#27ae60" : "#e74c3c"} 
+                                    />
+                                    <Text style={styles.featureText}>{feature.name}</Text>
+                                  </View>
+                                )
+                              ))}
+                            </>
+                          );
+                        } catch (err) {
+                          console.error('Error displaying plan features:', err);
+                          return (
+                            <Text style={{color: '#666', fontStyle: 'italic', marginTop: 5}}>
+                              Error loading plan features
+                            </Text>
+                          );
+                        }
                       })()}
                     </View>
-                      <View style={styles.planLimits}>
+                    
+                    {/* Plan Limits Section */}
+                    <View style={styles.planLimits}>
                       <Text style={styles.limitsTitle}>Plan Limits</Text>
                       
                       {(() => {
-                        const plan = subscription.plan || subscription.plan_details;
-                        if (!plan) return null;
+                        try {
+                          const planDetails = subscription.plan_details || 
+                            (typeof subscription.plan === 'object' ? subscription.plan : null);
+                          
+                          if (!planDetails) return (
+                            <Text style={{color: '#666', fontStyle: 'italic', marginTop: 5}}>
+                              Plan limit details not available
+                            </Text>
+                          );
+                          
+                          // Define all possible limits with their display names and override properties
+                          const limits = [
+                            { 
+                              key: 'max_properties', 
+                              name: 'Max Properties',
+                              override: 'max_properties_override'
+                            },
+                            { 
+                              key: 'max_units', 
+                              name: 'Max Units',
+                              override: 'max_units_override'
+                            },
+                            { 
+                              key: 'max_users', 
+                              name: 'Max Users',
+                              override: 'max_users_override'
+                            },
+                            { 
+                              key: 'max_files', 
+                              name: 'Max File Storage',
+                              override: 'max_files_override',
+                              format: (value) => `${value} GB`
+                            }
+                          ];
+                          
+                          return (
+                            <>
+                              {limits.map(limit => (
+                                // Only render limits that exist in either plan or as overrides
+                                (planDetails[limit.key] !== undefined || subscription[limit.override] !== undefined) && (
+                                  <View key={limit.key} style={styles.limitRow}>
+                                    <Text style={styles.limitLabel}>{limit.name}:</Text>
+                                    <Text style={styles.limitValue}>
+                                      {(() => {
+                                        // First check for override value in subscription
+                                        if (subscription[limit.override] !== undefined) {
+                                          const value = subscription[limit.override];
+                                          // Apply formatting if specified
+                                          return limit.format ? limit.format(value) : value || 'Unlimited';
+                                        }
+                                        
+                                        // Then fallback to plan value
+                                        const value = planDetails[limit.key];
+                                        // Apply formatting if specified
+                                        return limit.format ? limit.format(value) : value || 'Unlimited';
+                                      })()}
+                                    </Text>
+                                  </View>
+                                )
+                              ))}
+                            </>
+                          );
+                        } catch (err) {
+                          console.error('Error displaying plan limits:', err);
+                          return (
+                            <Text style={{color: '#666', fontStyle: 'italic', marginTop: 5}}>
+                              Error loading plan limits
+                            </Text>
+                          );
+                        }
+                      })()}
+                      
+                      {/* Support Level - if available */}
+                      {(() => {
+                        const planDetails = subscription.plan_details || 
+                          (typeof subscription.plan === 'object' ? subscription.plan : null);
                         
-                        return (
-                          <>
+                        if (planDetails?.support_level) {
+                          return (
                             <View style={styles.limitRow}>
-                              <Text style={styles.limitLabel}>Max Properties:</Text>
+                              <Text style={styles.limitLabel}>Support Level:</Text>
                               <Text style={styles.limitValue}>
-                                {subscription.max_properties_override || plan.max_properties || 'Unlimited'}
+                                {planDetails.support_level.charAt(0).toUpperCase() + 
+                                  planDetails.support_level.slice(1)}
                               </Text>
                             </View>
-                            
-                            <View style={styles.limitRow}>
-                              <Text style={styles.limitLabel}>Max Units:</Text>
-                              <Text style={styles.limitValue}>
-                                {subscription.max_units_override || plan.max_units || 'Unlimited'}
+                          );
+                        }
+                        return null;
+                      })()}
+                      
+                      {/* Description - if available */}
+                      {(() => {
+                        const planDetails = subscription.plan_details || 
+                          (typeof subscription.plan === 'object' ? subscription.plan : null);
+                        
+                        if (planDetails?.description) {
+                          return (
+                            <View style={[styles.limitRow, {marginTop: 10}]}>
+                              <Text style={{fontSize: 14, color: '#666', fontStyle: 'italic'}}>
+                                {planDetails.description}
                               </Text>
                             </View>
-                            
-                            <View style={styles.limitRow}>
-                              <Text style={styles.limitLabel}>Max Users:</Text>
-                              <Text style={styles.limitValue}>
-                                {subscription.max_users_override || plan.max_users || '5'}
-                              </Text>
-                            </View>
-                          </>
-                        );
+                          );
+                        }
+                        return null;
                       })()}
                     </View>
                   </View>
@@ -765,27 +894,28 @@ const OrganizationManagementScreen = ({ navigation, route }) => {
               )}
             </View>
           </View>
-        )}
-        
-        {activeTab === 'roles' && (
+        )}          {activeTab === 'roles' && (
           <View style={styles.tabContent}>
-            <View style={styles.section}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Organization Roles</Text>
-                <TouchableOpacity 
-                  style={styles.addButton}
-                  onPress={() => navigation.navigate('RoleManagement')}
-                >
-                  <Ionicons name="add" size={18} color="#fff" />
-                  <Text style={styles.addButtonText}>Add Role</Text>
-                </TouchableOpacity>
+            <View style={styles.section}>              <View style={styles.sectionHeader}>                <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                  <Text style={styles.sectionTitle}>Organization Roles</Text>
+                  {rolesLoading && <ActivityIndicator size="small" color="#3498db" style={{marginLeft: 10}} />}
+                </View>
               </View>
               
-              {roles.length === 0 ? (
+              <Text style={{fontSize: 14, color: '#666', marginBottom: 15, fontStyle: 'italic'}}>
+                Roles are predefined in the system and determine user permissions.
+              </Text>
+              
+              {rolesLoading ? (
+                <View style={{padding: 20, alignItems: 'center'}}>
+                  <ActivityIndicator size="large" color="#3498db" />
+                  <Text style={{marginTop: 10, fontSize: 16, color: '#666'}}>Loading roles...</Text>
+                </View>
+              ) : !roles || roles.length === 0 ? (
                 <View style={styles.emptyState}>
                   <Ionicons name="shield" size={40} color="#ccc" />
-                  <Text style={styles.emptyStateText}>No roles defined</Text>
-                  <Text style={styles.emptyStateSubText}>Create roles to manage user access</Text>
+                  <Text style={styles.emptyStateText}>No roles available</Text>
+                  <Text style={styles.emptyStateSubText}>Roles are predefined by the system</Text>
                 </View>
               ) : (
                 roles.map((role) => (
@@ -880,7 +1010,8 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 16,
     color: '#666',
-    textAlign: 'center',    marginTop: 10,
+    textAlign: 'center',    
+    marginTop: 10,
   },
   retryButton: {
     marginTop: 20,
@@ -895,19 +1026,12 @@ const styles = StyleSheet.create({
   },
   // Header styles
   header: {
-    height: 200,
-  },
-  headerBackground: {
-    flex: 1,
-    justifyContent: 'flex-end',
     backgroundColor: '#3498db',
+    padding: 24,
+    paddingTop: 30,
   },
-  headerBackgroundImage: {
-    opacity: 0.3,
-  },
-  headerOverlay: {
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    padding: 20,
+  headerContent: {
+    alignItems: 'center',
   },
   organizationName: {
     fontSize: 28,

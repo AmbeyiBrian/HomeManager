@@ -25,6 +25,7 @@ const SubscriptionManagementScreen = ({ navigation, route }) => {
     createSubscription,
     cancelSubscription
   } = useAuth();
+  
   // State variables
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -32,6 +33,9 @@ const SubscriptionManagementScreen = ({ navigation, route }) => {
   const [currentSubscription, setCurrentSubscription] = useState(subscription);
   const [paymentHistory, setPaymentHistory] = useState([]);
   const [error, setError] = useState(null);
+  
+  console.log('SubscriptionManagementScreen initialized with subscription:', 
+    subscription ? JSON.stringify({id: subscription.id, status: subscription.status}) : 'null');
 
   // Fetch subscription plans and payment history
   useEffect(() => {
@@ -57,17 +61,66 @@ const SubscriptionManagementScreen = ({ navigation, route }) => {
         } else if (paymentsResult.error) {
           console.warn('Warning fetching payment history:', paymentsResult.error.message);
         }
-        
-        // If we don't have the subscription data, fetch it using AuthContext
+          // If we don't have the subscription data, fetch it using AuthContext
         if (!currentSubscription) {
-          const subscriptionResult = await fetchSubscription(organizationId, true);
-          
-          if (subscriptionResult.success && subscriptionResult.data) {
-            // Validate the subscription data
-            if (isValidSubscription(subscriptionResult.data)) {
-              setCurrentSubscription(subscriptionResult.data);
+          console.log('No subscription provided from previous screen, fetching now...');
+          try {
+            const subscriptionResult = await fetchSubscription(organizationId, true);
+            
+            console.log('Subscription fetch result:', subscriptionResult.success ? 
+              JSON.stringify({
+                id: subscriptionResult.data?.id,
+                status: subscriptionResult.data?.status,
+                hasData: !!subscriptionResult.data
+              }) : 'fetch failed');
+            
+            if (subscriptionResult.success && subscriptionResult.data) {
+              try {
+                // Validate the subscription data
+                const isValid = isValidSubscription(subscriptionResult.data);
+                console.log('Is fetched subscription valid?', isValid, 
+                  'Data:', JSON.stringify({
+                    hasId: !!subscriptionResult.data.id,
+                    hasStatus: !!subscriptionResult.data.status,
+                    hasPlan: !!subscriptionResult.data.plan
+                  }));
+                
+                if (isValid) {
+                  console.log('Setting valid subscription from fetch');
+                  setCurrentSubscription(subscriptionResult.data);
+                } else {
+                  console.warn('Fetched subscription was invalid, checking if we can fix it');
+                  
+                  // Try to enhance the subscription with minimum valid data
+                  if (subscriptionResult.data.id && subscriptionResult.data.status) {
+                    // Ensure it has at least a basic plan structure
+                    if (!subscriptionResult.data.plan && !subscriptionResult.data.plan_details) {
+                      const enhancedSubscription = {
+                        ...subscriptionResult.data,
+                        plan_details: {
+                          id: 1,
+                          name: 'Basic Plan'
+                        }
+                      };
+                      
+                      if (isValidSubscription(enhancedSubscription)) {
+                        console.log('Enhanced subscription passed validation, using it');
+                        setCurrentSubscription(enhancedSubscription);
+                      }
+                    }
+                  }
+                }
+              } catch (validationError) {
+                console.error('Error validating fetched subscription:', validationError);
+              }
+            } else {
+              console.log('No subscription found or error fetching');
             }
+          } catch (fetchError) {
+            console.error('Error fetching subscription:', fetchError);
           }
+        } else {
+          console.log('Using subscription data passed from previous screen');
         }
       } catch (err) {
         console.error('Error fetching subscription data:', err);

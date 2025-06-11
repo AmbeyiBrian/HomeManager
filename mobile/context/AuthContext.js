@@ -746,16 +746,9 @@ export const AuthProvider = ({ children }) => {
       }
         // If we're online, make the API calls
       if (!authState.isOffline) {
-        console.log('AuthContext - Making API call for property details, propertyId:', propertyId);
         
         // Fetch property details using the single endpoint that includes units and stats
         const propertyResponse = await axios.get(`${API_PROPERTIES}/properties/${propertyId}/`);
-        console.log('AuthContext - propertyResponse received:', {
-          status: propertyResponse.status,
-          dataKeys: Object.keys(propertyResponse.data || {}),
-          hasUnits: !!(propertyResponse.data && propertyResponse.data.units),
-          unitsCount: propertyResponse.data?.units?.length || 0
-        });
         
         const propertyData = propertyResponse.data;
         
@@ -950,6 +943,8 @@ export const AuthProvider = ({ children }) => {
       if (!authState.isOffline) {
         const response = await axios.get(`${API_ORGANIZATIONS}/roles/`);
         const data = response.data.results || response.data || [];
+
+        console.log('Fetched roles:', response);
         
         // Cache the data for offline use
         if (authState.offlineEnabled) {
@@ -2339,7 +2334,6 @@ export const AuthProvider = ({ children }) => {
           // Set the URL based on pagination or construct a new one
         if (nextPageUrl) {
           url = nextPageUrl;
-          console.log('[fetchAllPayments] Using pagination URL:', url);
           
           // Important: We don't modify the nextPageUrl with additional filters
           // as the backend should already include all necessary filters in the next URL
@@ -2357,30 +2351,16 @@ export const AuthProvider = ({ children }) => {
             url += `&tenant=${tenant}`;
           }
           
-                   
+                                       
           // Add status filter if provided
           if (status && status !== 'all') {
             url += `&status=${status}`;
           }
-          
-          console.log('[fetchAllPayments] Constructed URL with filters:', url);
         }
         
         const response = await axios.get(url, { headers });
         let paymentsData;
         let pagination = {};
-        
-        // Debug logging for pagination
-        console.log('[fetchAllPayments] API Response structure:', {
-          hasResults: !!response.data?.results,
-          isArray: Array.isArray(response.data),
-          dataKeys: Object.keys(response.data || {}),
-          nextPageUrl: response.data?.next,
-          previousPageUrl: response.data?.previous,
-          totalCount: response.data?.count,
-          resultsLength: response.data?.results?.length || response.data?.length,
-          requestedUrl: url
-        });
         
         // Handle all possible data structures that might be returned by the API
         if (response.data && response.data.results) {
@@ -2395,7 +2375,6 @@ export const AuthProvider = ({ children }) => {
             nextPageUrl: response.data.next
           };
           
-          console.log('[fetchAllPayments] Pagination info:', pagination);
         } else if (Array.isArray(response.data)) {
           // If it's a direct array without pagination
           paymentsData = response.data;
@@ -2408,7 +2387,6 @@ export const AuthProvider = ({ children }) => {
             nextPageUrl: null
           };
           
-          console.log('[fetchAllPayments] Direct array - no pagination');
         } else {
           // Fallback in case response structure is unexpected
           paymentsData = [];
@@ -2421,7 +2399,8 @@ export const AuthProvider = ({ children }) => {
             nextPageUrl: null
           };
         }
-          // Enhance payment data with property and unit information
+        
+        // Enhance payment data with property and unit information
         const enhancedPayments = paymentsData.map(payment => {
           // Use the backend field names directly from your payment sample
           const propertyName = payment.property_name || 'Unknown Property';
@@ -2539,7 +2518,6 @@ export const AuthProvider = ({ children }) => {
         // Set the URL based on pagination or construct a new one
         if (nextPageUrl) {
           url = nextPageUrl;
-          console.log('[fetchAllNotices] Using pagination URL:', url);
         } else {
           // Build URL with pagination parameters and optional filters
           url = `${API_NOTICES}/?page=${page}&page_size=${pageSize}`;
@@ -2564,7 +2542,6 @@ export const AuthProvider = ({ children }) => {
             url += `&is_archived=${archived}`;
           }
           
-          console.log('[fetchAllNotices] Constructed URL with filters:', url);
         }
         
         const response = await axios.get(url, { headers });
@@ -2965,22 +2942,25 @@ export const AuthProvider = ({ children }) => {
   
   // Fetch organization subscription data
   const fetchSubscription = async (organizationId, forceRefresh = false) => {
+    console.log('💥 Fetching subscription for organization:', organizationId);
+    console.log('💥 Are we offline:', authState.isOffline);
+    
     try {
       setAuthState(prev => ({ ...prev, subscriptionLoading: true }));
-      
-      // If we're offline or we have cached data and aren't forcing refresh
+
       if ((authState.isOffline || !forceRefresh) && authState.offlineEnabled) {
         const cacheKey = `subscription_data_${organizationId}`;
         const cachedData = await getCachedData(cacheKey);
-        
+
         if (cachedData) {
+          console.log('💥 Using cached subscription data');
           setAuthState(prev => ({ 
             ...prev, 
             subscription: cachedData, 
             subscriptionLoading: false,
             subscriptionError: null
           }));
-          
+
           return {
             success: true,
             data: cachedData,
@@ -2988,114 +2968,96 @@ export const AuthProvider = ({ children }) => {
           };
         }
       }
-      
-      // If we're online, make the API call
+
       if (!authState.isOffline) {
-        console.log(`Fetching subscription for organization ${organizationId}`);
-        // First try to fetch by organization ID filter
         try {
+          console.log(`💥 Making API call to ${API_ORGANIZATIONS}/subscriptions/?organization=${organizationId}`);
           const response = await axios.get(`${API_ORGANIZATIONS}/subscriptions/?organization=${organizationId}`);
-          const data = response.data;
+          console.log('💥 API response structure:', JSON.stringify(Object.keys(response.data)));
+          console.log('💥 API response data type:', typeof response.data);
+          
           let subscription = null;
           
-          // Check if we got any results from the filtered endpoint
-          if (data.results && data.results.length > 0) {
-            console.log('Found subscription via organization filter');
-            subscription = data.results[0];
-          } else if (data && typeof data === 'object' && data.id) {
-            console.log('Found direct subscription object');
-            subscription = data;
-          } else if (Array.isArray(data) && data.length > 0) {
-            console.log('Found subscription in direct array format');
-            subscription = data[0];
+          // Try multiple ways to extract the subscription data
+          if (response.data.results && response.data.results.length > 0) {
+            console.log('💥 Found subscription in results array');
+            subscription = response.data.results[0];
+          } else if (response.data && typeof response.data === 'object' && response.data.id) {
+            console.log('💥 Found subscription as direct object');
+            subscription = response.data;
+          } else if (Array.isArray(response.data) && response.data.length > 0) {
+            console.log('💥 Found subscription in direct array');
+            subscription = response.data[0];
           } else {
-            // If no subscription found with filter, try getting all subscriptions
-            console.log('No subscription found with filter, trying main endpoint');
-            const allResponse = await axios.get(`${API_ORGANIZATIONS}/subscriptions/`);
-            const allData = allResponse.data;
+            // Try other fallback approaches
+            console.log('💥 No direct subscription found, trying additional endpoints');
             
-            if (allData.results && allData.results.length > 0) {
-              const orgSubscription = allData.results.find(
-                sub => sub.organization === organizationId || 
-                      (typeof sub.organization === 'object' && sub.organization?.id === organizationId)
-              );
-              
-              if (orgSubscription) {
-                console.log('Found subscription in all subscriptions list');
-                subscription = orgSubscription;
+            try {
+              // Try direct endpoint with organization ID
+              const directResponse = await axios.get(`${API_ORGANIZATIONS}/subscriptions/${organizationId}/`);
+              if (directResponse.data && directResponse.data.id) {
+                console.log('💥 Found subscription via direct ID endpoint');
+                subscription = directResponse.data;
               }
-            } else if (Array.isArray(allData)) {
-              // If data is directly an array instead of being in a results field
-              const orgSubscription = allData.find(
-                sub => sub.organization === organizationId || 
-                      (typeof sub.organization === 'object' && sub.organization?.id === organizationId)
-              );
-              
-              if (orgSubscription) {
-                console.log('Found subscription in array format');
-                subscription = orgSubscription;
-              }
+            } catch (directError) {
+              console.log('💥 Direct subscription endpoint failed:', directError.message);
+              // Continue to next approach
             }
           }
-          
+
           if (subscription) {
-            // Validate subscription has required fields
+            console.log('💥 Subscription found, validating...');
+            
             if (!isValidSubscription(subscription)) {
               console.warn('Invalid subscription data:', subscription);
               throw new Error('Invalid subscription data received');
             }
-            
-            // Cache the data for offline use
+
             if (authState.offlineEnabled) {
               const cacheKey = `subscription_data_${organizationId}`;
               await cacheDataForOffline(cacheKey, subscription);
+              console.log('💥 Subscription cached for offline use');
             }
-            
-            // Update state
+
             setAuthState(prev => ({ 
               ...prev, 
               subscription: subscription, 
               subscriptionLoading: false,
               subscriptionError: null
             }));
-            
+
             return {
               success: true,
               data: subscription
             };
           } else {
-            console.log('No subscription found for this organization');
-            
-            // Clear subscription from state
+            console.log('💥 No subscription found for this organization');
             setAuthState(prev => ({ 
               ...prev, 
               subscription: null, 
               subscriptionLoading: false,
               subscriptionError: 'No subscription found'
             }));
-            
+
             return {
               success: false,
               error: { message: 'No subscription found for this organization' }
             };
           }
         } catch (error) {
-          console.error('Error fetching subscription:', error);
-          
-          // Update error state
+          console.error('Error fetching subscription from API:', error);
           setAuthState(prev => ({ 
             ...prev, 
             subscriptionLoading: false,
             subscriptionError: error.message,
           }));
-          
+
           return {
             success: false,
             error: error.response?.data || { message: error.message }
           };
         }
       } else {
-        // We're offline and don't have cached data
         return {
           success: false,
           error: { message: 'No internet connection and no cached subscription data available' },
@@ -3104,14 +3066,12 @@ export const AuthProvider = ({ children }) => {
       }
     } catch (error) {
       console.error('Unexpected error in fetchSubscription:', error);
-      
-      // Update error state
       setAuthState(prev => ({ 
         ...prev, 
         subscriptionLoading: false,
         subscriptionError: error.message,
       }));
-      
+
       return {
         success: false,
         error: { message: error.message }
@@ -3121,25 +3081,45 @@ export const AuthProvider = ({ children }) => {
   
   // Helper function to validate subscription data
   const isValidSubscription = (sub) => {
-    if (!sub || typeof sub !== 'object') return false;
+    console.log('💥 Validating subscription:', sub);
     
-    // Must have some kind of plan data
-    const plan = sub.plan || sub.plan_details;
-    if (!plan || typeof plan !== 'object') return false;
+    if (!sub || typeof sub !== 'object') {
+      console.log('💥 Validation failed: subscription is null or not an object');
+      return false;
+    }
     
     // Check for minimum required fields
     if (!sub.id || !sub.status) {
-      console.warn('Subscription missing required fields:', sub);
+      console.log('💥 Validation failed: missing required fields - id or status');
+      console.log('💥 ID:', sub.id);
+      console.log('💥 Status:', sub.status);
       return false;
     }
     
-    // Check for valid plan data
-    if (!plan.name) {
-      console.warn('Subscription plan missing name:', plan);
-      return false;
+    // Must have some kind of plan data - either plan_details object or a valid plan ID
+    const planDetails = sub.plan_details;
+    const planId = sub.plan;
+    
+    // If plan_details is available, validate it
+    if (planDetails && typeof planDetails === 'object') {
+      if (!planDetails.name) {
+        console.log('💥 Validation failed: plan_details is missing name');
+        return false;
+      }
+      // Plan details looks good
+      console.log('💥 Subscription is valid (using plan_details)');
+      return true;
     }
     
-    return true;
+    // If no plan_details but we have a plan ID, that's also valid
+    if (planId) {
+      console.log('💥 Subscription is valid (using plan ID)');
+      return true;
+    }
+    
+    // Neither plan details nor plan ID is available
+    console.log('💥 Validation failed: neither plan_details object nor plan ID is available');
+    return false;
   };
   
   // Fetch subscription plans
