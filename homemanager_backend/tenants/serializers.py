@@ -1,0 +1,71 @@
+from rest_framework import serializers
+from .models import Tenant, Lease
+
+class LeaseSerializer(serializers.ModelSerializer):
+    """Serializer for the Lease model"""
+    unit_details = serializers.SerializerMethodField()
+    property_name = serializers.SerializerMethodField()
+    document_url = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Lease
+        fields = ['id', 'unit', 'unit_details', 'property_name', 'tenant', 
+                 'start_date', 'end_date', 'document', 'document_url', 
+                 'is_active', 'terms', 'signed_at']
+        read_only_fields = ['id', 'document_url']
+    
+    def get_unit_details(self, obj):
+        return {
+            'unit_number': obj.unit.unit_number,
+            'floor': obj.unit.floor,
+            'monthly_rent': str(obj.unit.monthly_rent)
+        }
+    
+    def get_property_name(self, obj):
+        return obj.unit.property.name
+    
+    def get_document_url(self, obj):
+        if obj.document:
+            return obj.document.url
+        return None
+
+class TenantSerializer(serializers.ModelSerializer):
+    """Serializer for the Tenant model"""
+    unit_details = serializers.SerializerMethodField()
+    property_name = serializers.SerializerMethodField()
+    active_lease = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Tenant
+        fields = ['id', 'name', 'phone_number', 'email', 'unit', 'unit_details',
+                 'property_name', 'move_in_date', 'move_out_date', 
+                 'emergency_contact', 'added_at', 'active_lease']
+        read_only_fields = ['id', 'added_at']
+    
+    def get_unit_details(self, obj):
+        return {
+            'unit_number': obj.unit.unit_number,
+            'floor': obj.unit.floor,
+            'monthly_rent': str(obj.unit.monthly_rent)
+        }
+    
+    def get_property_name(self, obj):
+        return obj.unit.property.name
+    
+    def get_active_lease(self, obj):
+        active_lease = obj.leases.filter(is_active=True).first()
+        if active_lease:
+            return {
+                'id': active_lease.id,
+                'start_date': active_lease.start_date,
+                'end_date': active_lease.end_date,
+                'has_document': bool(active_lease.document)
+            }
+        return None
+
+class TenantDetailSerializer(TenantSerializer):
+    """Detailed serializer for Tenant including leases"""
+    leases = LeaseSerializer(many=True, read_only=True)
+    
+    class Meta(TenantSerializer.Meta):
+        fields = TenantSerializer.Meta.fields + ['leases']

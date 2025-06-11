@@ -1,0 +1,2 @@
+Requirement already satisfied: faker in c:\users\brian.ambeyi\pycharmprojects\homemanager\home\lib\site-packages (37.1.0)
+Requirement already satisfied: tzdata in c:\users\brian.ambeyi\pycharmprojects\homemanager\home\lib\site-packages (from faker) (2025.2)

@@ -1,0 +1,24 @@
+diff --git a/frontend/src/pages/BrandingPanel.js b/frontend/src/pages/BrandingPanel.js
+index old-version new-version
+--- a/frontend/src/pages/BrandingPanel.js
++++ b/frontend/src/pages/BrandingPanel.js
+@@ -54,16 +54,10 @@ const BrandingPanel = ({ orgId }) => {
+         setError(null);
+         setLoading(true);
+         
+-        // If no organization ID provided, get the first one
+-        if (!orgId) {
+-          const orgsRes = await brandingAPI.getAllOrganizations();
+-          if (orgsRes.data.results && orgsRes.data.results.length > 0) {
+-            setOrganizationId(orgsRes.data.results[0].id);
+-          } else {
+-            throw new Error('No organization found');
+-          }
+-        } else {
+-          setOrganizationId(orgId);
++        // With the single organization model, we always use the provided orgId
++        if (orgId) {
++          setOrganizationId(orgId);
++          // No need to fetch organization list anymore
+         }
+ 

@@ -1,0 +1,1250 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  TouchableOpacity,
+  TextInput,
+  ActivityIndicator,
+  RefreshControl,
+  Alert,
+  Modal,
+  ScrollView,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useAuth } from '../context/AuthContext';
+import { useApi } from '../hooks/useApi';
+import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const PaymentsScreen = ({ navigation }) => {
+  const [payments, setPayments] = useState([]);
+  const [filteredPayments, setFilteredPayments] = useState([]);  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterStatus, setFilterStatus] = useState('all'); // 'all', 'pending', 'completed', 'failed'
+  const [selectedProperty, setSelectedProperty] = useState(null);
+  const [selectedTenant, setSelectedTenant] = useState(null);
+  const [properties, setProperties] = useState([]);
+  const [tenants, setTenants] = useState([]);
+  const [showFilters, setShowFilters] = useState(false);
+  const [showSummary, setShowSummary] = useState(false);
+  const [paymentStats, setPaymentStats] = useState({
+    totalPayments: 0,
+    totalAmount: 0,
+    pendingAmount: 0,
+    completedAmount: 0,
+    overdueAmount: 0
+  });
+  const { authState, isOffline } = useAuth();
+  const { endpoints } = useApi();
+  const [error, setError] = useState(null);
+    // Load properties and tenants for filtering
+  useEffect(() => {
+    loadPropertiesAndTenants();
+    fetchPayments();
+  }, []);
+  
+  // Load properties and tenants for filtering  const loadPropertiesAndTenants = async () => {
+    try {
+      // First check offline cache
+      if (isOffline) {
+        try {
+          const cachedProperties = await AsyncStorage.getItem('cached_properties');
+          const cachedTenants = await AsyncStorage.getItem('cached_tenants');
+          
+          if (cachedProperties) setProperties(JSON.parse(cachedProperties));
+          if (cachedTenants) setTenants(JSON.parse(cachedTenants));
+          
+          if (!cachedProperties && !cachedTenants) {
+            setError('No property or tenant data available offline');
+          }
+        } catch (cacheError) {
+          console.error('Error reading cached data:', cacheError);
+          setError('Failed to load properties and tenants from cache');
+        }
+        return;
+      }
+      
+      // Fetch both properties and tenants in parallel for better performance
+      const [propertiesResponse, tenantsResponse] = await Promise.all([
+        axios.get(endpoints.properties, {
+          headers: { 'Authorization': `Token ${authState.token}` }
+        }),
+        axios.get(endpoints.tenants, {
+          headers: { 'Authorization': `Token ${authState.token}` }
+        })
+      ]);
+      
+      // Process properties
+      if (propertiesResponse.data.results) {
+        const propertiesData = propertiesResponse.data.results;
+        setProperties(propertiesData);
+        await AsyncStorage.setItem('cached_properties', JSON.stringify(propertiesData));
+      }
+      
+      // Process tenants
+      if (tenantsResponse.data.results) {
+        const tenantsData = tenantsResponse.data.results;
+        setTenants(tenantsData);
+        await AsyncStorage.setItem('cached_tenants', JSON.stringify(tenantsData));
+      }
+      
+    } catch (error) {
+      console.error('Error loading properties and tenants:', error);
+      
+      // Try to use cached data as fallback
+      try {
+        const cachedProperties = await AsyncStorage.getItem('cached_properties');
+        const cachedTenants = await AsyncStorage.getItem('cached_tenants');
+        
+        if (cachedProperties) setProperties(JSON.parse(cachedProperties));
+        if (cachedTenants) setTenants(JSON.parse(cachedTenants));
+        
+        if (cachedProperties || cachedTenants) {
+          setError('Using cached property and tenant data. Pull down to try refreshing.');
+        } else {
+          setError('Failed to load properties and tenants. Check your connection and try again.');
+        }
+      } catch (cacheError) {
+        console.error('Error loading cached data:', cacheError);
+        setError('Failed to load property and tenant data');
+      }
+    }
+  };const fetchPayments = async () => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      // Handle offline mode
+      if (isOffline) {
+        const cachedPayments = await AsyncStorage.getItem('cached_payments');
+        if (cachedPayments) {
+          try {
+            const paymentsData = JSON.parse(cachedPayments);
+            console.log(`Loaded ${paymentsData.length} payments from offline cache`);
+            setPayments(paymentsData);
+            applyFilters(paymentsData, searchQuery, filterStatus, selectedProperty, selectedTenant);
+          } catch (parseError) {
+            console.error('Error parsing cached payments:', parseError);
+            // If parse fails, reset cache and show empty state
+            await AsyncStorage.removeItem('cached_payments');
+            setPayments([]);
+            setFilteredPayments([]);
+            setError('Error loading cached payments. Cache has been reset.');
+          }
+        } else {
+          // No cached data
+          setPayments([]);
+          setFilteredPayments([]);
+          setError('No payment data available while offline.');
+        }
+        setLoading(false);
+        setRefreshing(false);
+        return;
+      }
+      
+      // Build the API URL with filters - use the correct endpoint
+      let url = endpoints.payments;
+      const queryParams = [];
+      
+      if (selectedProperty) {
+        queryParams.push(`property=${selectedProperty}`);
+      }
+      
+      if (selectedTenant) {
+        queryParams.push(`tenant=${selectedTenant}`);
+      }
+      
+      if (filterStatus !== 'all' && filterStatus !== 'overdue') {
+        queryParams.push(`status=${filterStatus}`);
+      }
+      
+      if (queryParams.length > 0) {
+        url = `${url}?${queryParams.join('&')}`;
+      }
+      
+      const response = await axios.get(url, {
+        headers: {
+          'Authorization': `Token ${authState.token}`
+        }
+      });
+      
+      if (response.data) {
+        const paymentsData = response.data.results || response.data;
+        
+        // Process the data to match our UI structure
+        const processedPayments = paymentsData.map(payment => {
+          // Get property and unit details from the payment.unit object
+          const propertyName = payment.unit?.property_name || 'Unknown Property';
+          const unitNumber = payment.unit?.unit_number || 'Unknown Unit';
+          
+          // Check if payment is overdue
+          const today = new Date();
+          const dueDate = new Date(payment.due_date);
+          let status = payment.status;
+          
+          // If the payment is pending and past due date, mark it as overdue
+          if (status === 'pending' && dueDate < today) {
+            status = 'overdue';
+          }
+          
+          return {
+            id: payment.id.toString(),
+            tenant_name: payment.tenant?.name || 'Unknown Tenant',
+            tenant_id: payment.tenant?.id,
+            property_name: propertyName,
+            property_id: payment.unit?.property,
+            unit_number: unitNumber,
+            unit_id: payment.unit?.id,
+            amount: payment.amount,
+            due_date: payment.due_date,
+            status: status,
+            payment_method: payment.payment_method,
+            payment_date: payment.payment_date,
+            notes: payment.description,
+          };
+        });
+        
+        setPayments(processedPayments);
+        
+        // Save to offline cache
+        await AsyncStorage.setItem('cached_payments', JSON.stringify(processedPayments));
+        
+        // Apply any filters
+        applyFilters(processedPayments, searchQuery, filterStatus, selectedProperty, selectedTenant);
+      }
+      
+      setLoading(false);
+      setRefreshing(false);
+    } catch (error) {
+      console.error('Error fetching payments:', error);
+      
+      // Try to use cached data if API call fails
+      try {
+        const cachedPayments = await AsyncStorage.getItem('cached_payments');
+        if (cachedPayments) {
+          const paymentsData = JSON.parse(cachedPayments);
+          setPayments(paymentsData);
+          applyFilters(paymentsData, searchQuery, filterStatus, selectedProperty, selectedTenant);
+          Alert.alert('Using Cached Data', 'Showing previously loaded payments data.');
+        }
+      } catch (cacheError) {
+        console.error('Error loading cached payments:', cacheError);
+      }
+      
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+    const handleRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchPayments();
+  }, [selectedProperty, selectedTenant, filterStatus]);
+    const applyFilters = (data, query, status, propertyId, tenantId) => {
+    if (!data || !Array.isArray(data)) {
+      console.warn('Invalid data passed to applyFilters:', data);
+      setFilteredPayments([]);
+      return;
+    }
+
+    // Optimize filtering by combining all conditions in a single pass
+    const filtered = data.filter(payment => {
+      // Check status filter
+      if (status !== 'all' && payment.status !== status) {
+        return false;
+      }
+      
+      // Check property filter
+      if (propertyId && payment.property_id != propertyId) {
+        return false;
+      }
+      
+      // Check tenant filter
+      if (tenantId && payment.tenant_id != tenantId) {
+        return false;
+      }
+      
+      // Apply search query (case-insensitive)
+      if (query && query.trim() !== '') {
+        const queryLower = query.toLowerCase();
+        const matchesSearch = 
+          (payment.tenant_name && payment.tenant_name.toLowerCase().includes(queryLower)) ||
+          (payment.property_name && payment.property_name.toLowerCase().includes(queryLower)) ||
+          (payment.unit_number && payment.unit_number.toString().toLowerCase().includes(queryLower)) ||
+          (payment.amount && payment.amount.toString().includes(queryLower)) ||
+          (payment.notes && payment.notes.toLowerCase().includes(queryLower));
+          
+        if (!matchesSearch) {
+          return false;
+        }
+      }
+      
+      // All filters passed
+      return true;
+    });
+    
+    setFilteredPayments(filtered);
+  };
+  
+  const handleSearch = (query) => {
+    setSearchQuery(query);
+    applyFilters(payments, query, filterStatus, selectedProperty, selectedTenant);
+  };
+  
+  const handleFilterChange = (status) => {
+    setFilterStatus(status);
+    applyFilters(payments, searchQuery, status, selectedProperty, selectedTenant);
+  };
+  
+  const handlePropertyChange = (propertyId) => {
+    setSelectedProperty(propertyId === selectedProperty ? null : propertyId);
+    setShowFilters(false);
+    // Immediately apply the filter
+    applyFilters(payments, searchQuery, filterStatus, 
+      propertyId === selectedProperty ? null : propertyId, 
+      selectedTenant);
+  };
+  
+  const handleTenantChange = (tenantId) => {
+    setSelectedTenant(tenantId === selectedTenant ? null : tenantId);
+    setShowFilters(false);
+    // Immediately apply the filter
+    applyFilters(payments, searchQuery, filterStatus, 
+      selectedProperty, 
+      tenantId === selectedTenant ? null : tenantId);
+  };
+  
+  const clearFilters = () => {
+    setSelectedProperty(null);
+    setSelectedTenant(null);
+    setShowFilters(false);
+    applyFilters(payments, searchQuery, filterStatus, null, null);
+  };
+    const handlePaymentPress = (payment) => {
+    // Navigate to payment detail screen or show action sheet
+    Alert.alert(
+      'Payment Options', 
+      `${payment.tenant_name} - ${payment.property_name} (Unit ${payment.unit_number})`,
+      [
+        {
+          text: 'Mark as Paid',
+          onPress: () => markAsPaid(payment.id),
+          disabled: payment.status === 'completed'
+        },
+        {
+          text: 'Add Note',
+          onPress: () => addPaymentNote(payment.id)
+        },
+        {
+          text: 'View Details',
+          onPress: () => viewPaymentDetails(payment.id)
+        },
+        {
+          text: 'Cancel',
+          style: 'cancel'
+        }
+      ]
+    );
+  };
+    const viewPaymentDetails = (paymentId) => {
+    // Navigate to payment details screen
+    navigation.navigate('PaymentDetails', { paymentId });
+  };
+    const markAsPaid = async (paymentId) => {
+    if (isOffline) {
+      Alert.alert('Offline Mode', 'Cannot update payments while offline');
+      return;
+    }
+    
+    // Show loading indicator immediately for better UX
+    const targetIndex = payments.findIndex(p => p.id === paymentId);
+    if (targetIndex === -1) {
+      Alert.alert('Error', 'Payment not found');
+      return;
+    }
+    
+    // Optimistic UI update - mark as processing immediately
+    const tempUpdatedPayments = [...payments];
+    tempUpdatedPayments[targetIndex] = {
+      ...tempUpdatedPayments[targetIndex],
+      status: 'processing'
+    };
+    setPayments(tempUpdatedPayments);
+    applyFilters(tempUpdatedPayments, searchQuery, filterStatus, selectedProperty, selectedTenant);
+    
+    try {
+      // Call the API to update payment status
+      const today = new Date().toISOString();
+      const response = await axios.patch(
+        `${endpoints.paymentDetail(paymentId)}`, 
+        {
+          status: 'completed',
+          payment_date: today,
+          payment_method: 'cash'
+        },
+        {
+          headers: {
+            'Authorization': `Token ${authState.token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      
+      // Update UI with actual server response
+      const updatedPayments = payments.map(p => {
+        if (p.id === paymentId) {
+          return {
+            ...p, 
+            status: 'completed', 
+            payment_date: today.split('T')[0],
+            payment_method: 'cash',
+            // Include any additional fields returned by the server
+            ...(response.data || {})
+          };
+        }
+        return p;
+      });
+      
+      setPayments(updatedPayments);
+      applyFilters(updatedPayments, searchQuery, filterStatus, selectedProperty, selectedTenant);
+      
+      // Update local cache
+      await AsyncStorage.setItem('cached_payments', JSON.stringify(updatedPayments));
+      
+      Alert.alert('Success', 'Payment has been marked as paid');
+    } catch (error) {
+      console.error('Error updating payment:', error);
+      
+      // Revert optimistic update
+      const originalPayments = [...payments];
+      setPayments(originalPayments);
+      applyFilters(originalPayments, searchQuery, filterStatus, selectedProperty, selectedTenant);
+      
+      // Show error with details if available
+      const errorMsg = error.response?.data?.detail || 
+                      error.response?.data?.message || 
+                      'Failed to update payment status. Please try again.';
+      Alert.alert('Error', errorMsg);
+    }
+  };
+    const [showNoteModal, setShowNoteModal] = useState(false);
+  const [currentPaymentId, setCurrentPaymentId] = useState(null);
+  const [noteText, setNoteText] = useState('');
+  
+  const addPaymentNote = async (paymentId) => {
+    if (isOffline) {
+      Alert.alert('Offline Mode', 'Cannot update payments while offline');
+      return;
+    }
+    
+    // Show the note modal and set the current payment ID
+    setCurrentPaymentId(paymentId);
+    setNoteText('');
+    setShowNoteModal(true);
+  };
+    const savePaymentNote = async () => {
+    if (!noteText || !noteText.trim() || !currentPaymentId) {
+      setShowNoteModal(false);
+      return;
+    }
+    
+    try {
+      // Call API to update the payment note
+      await axios.patch(
+        `${endpoints.paymentDetail(currentPaymentId)}`,
+        { description: noteText },
+        {
+          headers: {
+            'Authorization': `Token ${authState.token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      
+      // Update UI after successful API call
+      const updatedPayments = payments.map(p => {
+        if (p.id === currentPaymentId) {
+          return { ...p, notes: noteText };
+        }
+        return p;
+      });
+      
+      setPayments(updatedPayments);
+      applyFilters(updatedPayments, searchQuery, filterStatus, selectedProperty, selectedTenant);
+      
+      // Update local cache
+      await AsyncStorage.setItem('cached_payments', JSON.stringify(updatedPayments));
+      
+      // Hide modal and reset state
+      setShowNoteModal(false);
+      setCurrentPaymentId(null);
+      setNoteText('');
+      
+      Alert.alert('Success', 'Note has been added to the payment');
+    } catch (error) {
+      console.error('Error adding payment note:', error);
+      Alert.alert('Error', 'Failed to add note. Please try again.');
+      setShowNoteModal(false);
+    }
+  };
+  
+  const formatCurrency = (amount) => {
+    return `KES ${amount.toLocaleString()}`;
+  };
+  // Memoize status formatting functions to improve performance
+  const statusColors = {
+    'pending': '#3498db',
+    'completed': '#2ecc71',
+    'overdue': '#e74c3c',
+    'failed': '#e74c3c',
+    'processing': '#f39c12',
+    'initiated': '#f1c40f',
+    'default': '#95a5a6'
+  };
+
+  const statusLabels = {
+    'pending': 'Pending',
+    'completed': 'Paid',
+    'overdue': 'Overdue',
+    'failed': 'Failed',
+    'processing': 'Processing',
+    'initiated': 'Initiated'
+  };
+  
+  const getStatusColor = (status) => {
+    return statusColors[status] || statusColors.default;
+  };
+  
+  const getStatusLabel = (status) => {
+    return statusLabels[status] || status;
+  };
+    const renderFilterButton = (label, value) => (
+    <TouchableOpacity
+      style={[
+        styles.filterButton,
+        filterStatus === value && { backgroundColor: '#3498db' }
+      ]}
+      onPress={() => handleFilterChange(value)}
+    >
+      <Text
+        style={[
+          styles.filterButtonText,
+          filterStatus === value && { color: '#fff' }
+        ]}
+      >
+        {label}
+      </Text>
+    </TouchableOpacity>
+  );
+  const renderPaymentItem = React.useCallback(({ item }) => {
+    const dueDate = new Date(item.due_date);
+    const formattedDueDate = dueDate.toLocaleDateString();
+    
+    // Calculate days overdue for better user information
+    let overdueText = '';
+    if (item.status === 'overdue') {
+      const today = new Date();
+      const diffTime = Math.abs(today - dueDate);
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      overdueText = ` (${diffDays} day${diffDays !== 1 ? 's' : ''} overdue)`;
+    }
+    
+    return (
+      <TouchableOpacity 
+        style={styles.paymentCard}
+        onPress={() => handlePaymentPress(item)}
+      >
+        <View style={styles.paymentHeader}>
+          <Text style={styles.tenantName}>{item.tenant_name}</Text>
+          <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}>
+            <Text style={styles.statusText}>{getStatusLabel(item.status)}</Text>
+          </View>
+        </View>
+        
+        <View style={styles.paymentDetails}>
+          <View style={styles.detailRow}>
+            <View style={styles.detailItem}>
+              <Text style={styles.detailLabel}>Property</Text>
+              <Text style={styles.detailValue}>{item.property_name}, Unit {item.unit_number}</Text>
+            </View>
+          </View>
+          
+          <View style={styles.detailRow}>
+            <View style={styles.detailItem}>
+              <Text style={styles.detailLabel}>Amount</Text>
+              <Text style={styles.amountText}>{formatCurrency(item.amount)}</Text>
+            </View>
+            
+            <View style={styles.detailItem}>
+              <Text style={styles.detailLabel}>Due Date</Text>
+              <Text style={[
+                styles.detailValue, 
+                item.status === 'overdue' && styles.overdueText
+              ]}>{formattedDueDate}{overdueText}</Text>
+            </View>
+          </View>
+          
+          {item.payment_date && (
+            <View style={styles.detailRow}>
+              <View style={styles.detailItem}>
+                <Text style={styles.detailLabel}>Payment Date</Text>
+                <Text style={styles.detailValue}>
+                  {new Date(item.payment_date).toLocaleDateString()}
+                </Text>
+              </View>
+              
+              {item.payment_method && (
+                <View style={styles.detailItem}>
+                  <Text style={styles.detailLabel}>Method</Text>
+                  <Text style={styles.detailValue}>
+                    {item.payment_method === 'mpesa' ? 'M-Pesa' : 
+                     item.payment_method === 'bank_transfer' ? 'Bank Transfer' : 
+                     item.payment_method === 'cash' ? 'Cash' : 
+                     item.payment_method}
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
+          
+          {item.notes && (
+            <View style={styles.notesContainer}>
+              <Text style={styles.notesText}>{item.notes}</Text>
+            </View>
+          )}
+        </View>
+        
+        <View style={styles.actionIndicator}>
+          <Ionicons name="chevron-forward" size={20} color="#bbb" />
+        </View>
+      </TouchableOpacity>
+    );
+  }, [handlePaymentPress, formatCurrency, getStatusColor, getStatusLabel]);
+  // Note Modal Component
+  const NoteModal = () => (
+    <Modal
+      visible={showNoteModal}
+      transparent={true}
+      animationType="slide"
+      onRequestClose={() => setShowNoteModal(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Add Payment Note</Text>
+            <TouchableOpacity onPress={() => setShowNoteModal(false)}>
+              <Ionicons name="close" size={24} color="#333" />
+            </TouchableOpacity>
+          </View>
+          
+          <TextInput
+            style={styles.noteInput}
+            placeholder="Enter payment note..."
+            value={noteText}
+            onChangeText={setNoteText}
+            multiline={true}
+            numberOfLines={4}
+            maxLength={500}
+          />
+          
+          <TouchableOpacity 
+            style={styles.saveNoteButton}
+            onPress={savePaymentNote}
+          >
+            <Text style={styles.saveNoteButtonText}>Save Note</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+  
+  // Filter Modal Component
+  const FilterModal = () => (
+    <Modal
+      visible={showFilters}
+      transparent={true}
+      animationType="slide"
+      onRequestClose={() => setShowFilters(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Advanced Filters</Text>
+            <TouchableOpacity onPress={() => setShowFilters(false)}>
+              <Ionicons name="close" size={24} color="#333" />
+            </TouchableOpacity>
+          </View>
+          
+          <Text style={styles.filterSectionTitle}>Filter by Property</Text>
+          <ScrollView style={styles.propertiesList}>
+            {properties.map(property => (
+              <TouchableOpacity
+                key={`property-${property.id}`}
+                style={[
+                  styles.filterItem,
+                  selectedProperty === property.id && styles.selectedFilterItem
+                ]}
+                onPress={() => handlePropertyChange(property.id)}
+              >
+                <Text 
+                  style={[
+                    styles.filterItemText,
+                    selectedProperty === property.id && styles.selectedFilterItemText
+                  ]}
+                >
+                  {property.name}
+                </Text>
+                {selectedProperty === property.id && (
+                  <Ionicons name="checkmark" size={18} color="#fff" />
+                )}
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+          
+          <Text style={styles.filterSectionTitle}>Filter by Tenant</Text>
+          <ScrollView style={styles.tenantsList}>
+            {tenants.map(tenant => (
+              <TouchableOpacity
+                key={`tenant-${tenant.id}`}
+                style={[
+                  styles.filterItem,
+                  selectedTenant === tenant.id && styles.selectedFilterItem
+                ]}
+                onPress={() => handleTenantChange(tenant.id)}
+              >
+                <Text 
+                  style={[
+                    styles.filterItemText,
+                    selectedTenant === tenant.id && styles.selectedFilterItemText
+                  ]}
+                >
+                  {tenant.name}
+                </Text>
+                {selectedTenant === tenant.id && (
+                  <Ionicons name="checkmark" size={18} color="#fff" />
+                )}
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+          
+          <TouchableOpacity 
+            style={styles.clearFiltersButton}
+            onPress={clearFilters}
+          >
+            <Text style={styles.clearFiltersButtonText}>Clear All Filters</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.applyFiltersButton}
+            onPress={() => setShowFilters(false)}
+          >
+            <Text style={styles.applyFiltersButtonText}>Apply Filters</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+    return (
+    <View style={styles.container}>
+      {isOffline && (
+        <View style={styles.offlineBanner}>
+          <Ionicons name="cloud-offline" size={14} color="#fff" />
+          <Text style={styles.offlineText}>Offline Mode</Text>
+        </View>
+      )}
+      
+      {error && (
+        <View style={styles.errorBanner}>
+          <Ionicons name="alert-circle" size={14} color="#fff" />
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity 
+            style={styles.errorDismissButton}
+            onPress={() => setError(null)}
+          >
+            <Ionicons name="close-circle" size={16} color="#fff" />
+          </TouchableOpacity>
+        </View>
+      )}
+      
+      <View style={styles.searchContainer}>
+        <Ionicons name="search" size={20} color="#7f8c8d" style={styles.searchIcon} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search payments..."
+          value={searchQuery}
+          onChangeText={handleSearch}
+        />
+        {searchQuery.length > 0 && (
+          <TouchableOpacity
+            style={styles.clearButton}
+            onPress={() => handleSearch('')}
+          >
+            <Ionicons name="close-circle" size={18} color="#7f8c8d" />
+          </TouchableOpacity>
+        )}
+      </View>
+        <View style={styles.filterContainer}>
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterScrollContent}
+        >
+          <View style={styles.statusFilters}>
+            {renderFilterButton('All', 'all')}
+            {renderFilterButton('Pending', 'pending')}
+            {renderFilterButton('Paid', 'completed')}
+            {renderFilterButton('Overdue', 'overdue')}
+            
+            <TouchableOpacity 
+              style={[
+                styles.advancedFilterButton,
+                (selectedProperty || selectedTenant) && styles.activeAdvancedFilterButton
+              ]}
+              onPress={() => setShowFilters(true)}
+            >
+              <Ionicons 
+                name="options-outline" 
+                size={18} 
+                color={(selectedProperty || selectedTenant) ? "#fff" : "#3498db"} 
+              />
+              <Text style={[
+                styles.advancedFilterText,
+                (selectedProperty || selectedTenant) && styles.activeAdvancedFilterText
+              ]}>
+                {selectedProperty || selectedTenant ? 'Filters Applied' : 'Advanced Filters'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </View>
+        {loading && !refreshing ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#3498db" />
+          <Text style={styles.loadingText}>Loading payments...</Text>
+        </View>      ) : filteredPayments.length > 0 ? (
+        <FlatList
+          data={filteredPayments}
+          keyExtractor={(item) => item.id}
+          renderItem={renderPaymentItem}
+          contentContainerStyle={styles.listContainer}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              colors={["#3498db"]}
+              tintColor="#3498db"
+              title="Refreshing payments..."
+              titleColor="#3498db"
+            />
+          }
+          initialNumToRender={8}
+          maxToRenderPerBatch={10}
+          windowSize={8}
+          removeClippedSubviews={true}
+          getItemLayout={(data, index) => ({
+            length: 180, // Approximate height of each payment card
+            offset: 180 * index + (16 * (index + 1)), // Height + margins
+            index,
+          })}
+          ListHeaderComponent={
+            <View style={styles.listHeaderContainer}>
+              <Text style={styles.resultsText}>
+                Showing {filteredPayments.length} {filteredPayments.length === 1 ? 'payment' : 'payments'}
+                {selectedProperty || selectedTenant || filterStatus !== 'all' ? ' (filtered)' : ''}
+              </Text>
+            </View>
+          }
+        />
+      ) : (
+        <View style={styles.emptyContainer}>
+          <Ionicons name="cash-outline" size={60} color="#ddd" />
+          <Text style={styles.emptyText}>
+            {searchQuery.length > 0 || filterStatus !== 'all'
+              ? 'No matching payments found'
+              : 'No payments found'}
+          </Text>
+          <Text style={styles.emptySubtext}>
+            {searchQuery.length > 0 || filterStatus !== 'all'
+              ? 'Try a different search term or filter'
+              : 'Add tenants to your properties to start tracking rent payments'}
+          </Text>
+        </View>
+      )}      <TouchableOpacity 
+        style={styles.addButton}
+        onPress={() => {
+          if (isOffline) {
+            Alert.alert('Offline Mode', 'Cannot create payments while offline');
+            return;
+          }
+          navigation.navigate('AddPayment');
+        }}
+      >
+        <Ionicons name="add" size={24} color="#fff" />
+      </TouchableOpacity>
+      
+      <FilterModal />
+      <NoteModal />
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+  },
+  offlineBanner: {
+    backgroundColor: '#e74c3c',
+    padding: 8,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },  offlineText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
+    marginLeft: 5,
+  },
+  errorBanner: {
+    backgroundColor: '#e67e22',
+    padding: 8,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  errorText: {
+    flex: 1,
+    color: '#fff',
+    fontSize: 12,
+    marginLeft: 5,
+  },
+  errorDismissButton: {
+    padding: 4,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'white',
+    margin: 16,
+    marginBottom: 8,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    height: 40,
+    fontSize: 16,
+  },
+  clearButton: {
+    padding: 4,
+  },  filterContainer: {
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+  statusFilters: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },  filterScrollContent: {
+    paddingVertical: 4,
+    paddingRight: 8,
+  },
+  filterButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#3498db',
+    marginRight: 8,
+    minWidth: 80,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 1,
+    elevation: 1,
+  },
+  filterButtonText: {
+    fontSize: 13,
+    color: '#3498db',
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  advancedFilterButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8f8f8',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    marginLeft: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 1,
+    elevation: 1,
+  },
+  activeAdvancedFilterButton: {
+    backgroundColor: '#3498db',
+    borderColor: '#2980b9',
+  },
+  advancedFilterText: {
+    fontSize: 13,
+    color: '#3498db',
+    marginLeft: 4,
+    fontWeight: '500',
+  },
+  activeAdvancedFilterText: {
+    color: '#ffffff',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },  listContainer: {
+    padding: 16,
+    paddingTop: 8,
+  },
+  listHeaderContainer: {
+    marginBottom: 12,
+  },
+  resultsText: {
+    fontSize: 14,
+    color: '#7f8c8d',
+    fontStyle: 'italic',
+  },
+  paymentCard: {
+    backgroundColor: 'white',
+    marginBottom: 12,
+    borderRadius: 8,
+    overflow: 'hidden',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  paymentHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  tenantName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#2c3e50',
+  },
+  statusBadge: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+  },
+  statusText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  paymentDetails: {
+    padding: 12,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    marginBottom: 8,
+  },
+  detailItem: {
+    flex: 1,
+  },
+  detailLabel: {
+    fontSize: 12,
+    color: '#7f8c8d',
+    marginBottom: 2,
+  },
+  detailValue: {
+    fontSize: 14,
+    color: '#34495e',
+  },
+  amountText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#2c3e50',
+  },
+  overdueText: {
+    color: '#e74c3c',
+  },
+  notesContainer: {
+    backgroundColor: '#f7f9fa',
+    padding: 8,
+    borderRadius: 4,
+    marginTop: 4,
+  },
+  notesText: {
+    fontSize: 12,
+    color: '#7f8c8d',
+    fontStyle: 'italic',
+  },
+  actionIndicator: {
+    position: 'absolute',
+    right: 12,
+    top: '50%',
+    marginTop: -10,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  emptyText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginTop: 16,
+    color: '#7f8c8d',
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: '#95a5a6',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  addButton: {
+    position: 'absolute',
+    right: 20,
+    bottom: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#3498db',
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    width: '90%',
+    backgroundColor: 'white',
+    borderRadius: 8,
+    padding: 16,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  filterSectionTitle: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#333',
+    marginBottom: 8,
+    marginTop: 16,
+  },
+  propertiesList: {
+    maxHeight: 200,
+    marginBottom: 16,
+  },
+  tenantsList: {
+    maxHeight: 200,
+  },
+  filterItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#3498db',
+    marginBottom: 8,
+  },
+  filterItemText: {
+    fontSize: 14,
+    color: '#333',
+  },
+  selectedFilterItem: {
+    backgroundColor: '#3498db',
+  },
+  selectedFilterItemText: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+  clearFiltersButton: {
+    backgroundColor: '#e74c3c',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  clearFiltersButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },  applyFiltersButton: {
+    backgroundColor: '#3498db',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  applyFiltersButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  noteInput: {
+    backgroundColor: '#f5f5f5',
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 10,
+    marginBottom: 15,
+    textAlignVertical: 'top',
+    fontSize: 16,
+    minHeight: 100,
+    borderColor: '#ddd',
+    borderWidth: 1,
+  },
+  saveNoteButton: {
+    backgroundColor: '#2ecc71',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  saveNoteButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+});
+
+export default PaymentsScreen;

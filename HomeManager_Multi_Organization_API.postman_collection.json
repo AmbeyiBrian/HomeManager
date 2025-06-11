@@ -1,0 +1,176 @@
+{
+  "info": {
+    "name": "HomeManager Multi-Organization API",
+    "description": "API collection for multi-organization HomeManager platform",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{jwt_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"manager@company.com\",\n  \"password\": \"secure_password\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/users/login/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "users", "login", ""]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Organization Management",
+      "item": [
+        {
+          "name": "Get Organization Settings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Organization",
+                "value": "{{organization_slug}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/organizations/{{organization_slug}}/settings/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "organizations", "{{organization_slug}}", "settings", ""]
+            }
+          }
+        },
+        {
+          "name": "List Subscription Plans",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/subscription-plans/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "subscription-plans", ""]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Properties (Organization-scoped)",
+      "item": [
+        {
+          "name": "List Properties (Slug-based routing)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/org/{{organization_slug}}/api/properties/",
+              "host": ["{{base_url}}"],
+              "path": ["org", "{{organization_slug}}", "api", "properties", ""]
+            }
+          }
+        },
+        {
+          "name": "List Properties (Header-based routing)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Organization",
+                "value": "{{organization_slug}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/properties/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "properties", ""]
+            }
+          }
+        },
+        {
+          "name": "Create Property",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Organization",
+                "value": "{{organization_slug}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Sunset Apartments\",\n  \"address\": \"123 Main Street\",\n  \"city\": \"Nairobi\",\n  \"country\": \"Kenya\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/properties/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "properties", ""]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Tenants (Organization-scoped)",
+      "item": [
+        {
+          "name": "List Tenants",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Organization",
+                "value": "{{organization_slug}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/tenants/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "tenants", ""]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "organization_slug",
+      "value": "my-company",
+      "type": "string"
+    },
+    {
+      "key": "jwt_token",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}
