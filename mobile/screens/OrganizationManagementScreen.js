@@ -8,14 +8,16 @@ import {
   ActivityIndicator,
   RefreshControl,
   Alert,
-  ImageBackground,
-  Switch,
+  Dimensions,
+  Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { useApi } from '../hooks/useApi';
 import CacheBanner from '../components/CacheBanner';
+
+const { width, height } = Dimensions.get('window');
 
 const OrganizationManagementScreen = ({ navigation, route }) => {
   // Auth context for organization data and user permissions
@@ -99,8 +101,9 @@ const OrganizationManagementScreen = ({ navigation, route }) => {
       }
     }
     
-    return org;
-  };  // Fetch organization data when screen comes into focus
+    return org;  };
+  
+  // Fetch organization data when screen comes into focus
   useFocusEffect(
     useCallback(() => {
       loadOrganizationData();
@@ -108,7 +111,8 @@ const OrganizationManagementScreen = ({ navigation, route }) => {
       };
     }, [])
   );
-    // Using the fetchSubscription function from AuthContext instead of local implementation
+  
+  // Using the fetchSubscription function from AuthContext instead of local implementation
   
   // Function to load organization data
   const loadOrganizationData = async (isRefreshing = false) => {
@@ -208,16 +212,15 @@ const OrganizationManagementScreen = ({ navigation, route }) => {
         
         if (membersResult.fromCache && !isOffline) {
           // Optionally inform user that cached data is shown, and refresh is happening
-        }
-      } else {
+        }      } else {
         setError(membersResult.error?.detail || membersResult.error?.message || 'Failed to fetch members.');
-      }        // Fetch organization roles using AuthContext - similar to subscriptions and members
+      }
+      
+      // Fetch organization roles using AuthContext - similar to subscriptions and members
       console.log('💥 Fetching roles, isRefreshing:', isRefreshing);
       const rolesResult = await fetchRoles(isRefreshing);
       console.log('💥 Roles result:', rolesResult);
-      
-      if (rolesResult.success) {
-        console.log(rolesResult);
+        if (rolesResult.success) {
         console.log('💥 Roles found:', rolesResult.data);
         setRoles(rolesResult.data || []);
       } else {
@@ -371,85 +374,60 @@ const OrganizationManagementScreen = ({ navigation, route }) => {
         </TouchableOpacity>
       </View>
     );
-  }
-  return (
+  }  return (
     <View style={styles.container}>
-      {/* Organization Header */}
-      <View style={styles.header}>
+      {/* Modern Header */}
+      <View style={styles.headerContainer}>
         <View style={styles.headerContent}>
-          <Text style={styles.organizationName}>{organization?.name}</Text>
-          <Text style={styles.organizationDetail}>{organization?.address || 'No address provided'}</Text>
-          <Text style={styles.organizationDetail}>
-            {members?.length || 0} members • Created {organization?.created_at ? new Date(organization.created_at).toLocaleDateString() : 'N/A'}
-          </Text>
+          <View style={styles.organizationInfo}>
+            <View style={styles.organizationIcon}>
+              <Ionicons name="business" size={24} color="#fff" />
+            </View>
+            <View style={styles.organizationDetails}>
+              <Text style={styles.organizationName}>{organization?.name}</Text>
+              <Text style={styles.memberCount}>{members?.length || 0} members</Text>
+            </View>
+          </View>
+          
           {organization?.user_role && (
-            <View style={styles.userRoleBadge}>
-              <Ionicons name="shield-checkmark-outline" size={14} color="#fff" style={{marginRight: 4}} />
-              <Text style={styles.userRoleBadgeText}>
-                Your Role: {organization.user_role}
-              </Text>
-            </View>          )}
+            <View style={styles.roleBadgeContainer}>
+              <View style={styles.roleBadge}>
+                <Ionicons name="shield-checkmark" size={14} color="#fff" />
+                <Text style={styles.roleBadgeText}>{organization.user_role}</Text>
+              </View>
+            </View>
+          )}
         </View>
+        
         {organizationFromCache && <CacheBanner visible={true} />}
       </View>
 
-      {/* Tab Navigation */}
+      {/* Enhanced Tab Navigation */}
       <View style={styles.tabContainer}>
-        <TouchableOpacity 
-          style={[styles.tabButton, activeTab === 'details' && styles.activeTabButton]} 
-          onPress={() => setActiveTab('details')}
-        >
-          <Ionicons 
-            name="information-circle-outline" 
-            size={20} 
-            color={activeTab === 'details' ? '#fff' : '#555'} 
-          />
-          <Text style={[styles.tabButtonText, activeTab === 'details' && styles.activeTabButtonText]}>
-            Details
-          </Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={[styles.tabButton, activeTab === 'members' && styles.activeTabButton]} 
-          onPress={() => setActiveTab('members')}
-        >
-          <Ionicons 
-            name="people-outline" 
-            size={20} 
-            color={activeTab === 'members' ? '#fff' : '#555'} 
-          />
-          <Text style={[styles.tabButtonText, activeTab === 'members' && styles.activeTabButtonText]}>
-            Members
-          </Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={[styles.tabButton, activeTab === 'subscription' && styles.activeTabButton]} 
-          onPress={() => setActiveTab('subscription')}
-        >
-          <Ionicons 
-            name="card-outline" 
-            size={20} 
-            color={activeTab === 'subscription' ? '#fff' : '#555'} 
-          />
-          <Text style={[styles.tabButtonText, activeTab === 'subscription' && styles.activeTabButtonText]}>
-            Subscription
-          </Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={[styles.tabButton, activeTab === 'roles' && styles.activeTabButton]} 
-          onPress={() => setActiveTab('roles')}
-        >
-          <Ionicons 
-            name="shield-outline" 
-            size={20} 
-            color={activeTab === 'roles' ? '#fff' : '#555'} 
-          />
-          <Text style={[styles.tabButtonText, activeTab === 'roles' && styles.activeTabButtonText]}>
-            Roles
-          </Text>
-        </TouchableOpacity>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabScrollView}>
+          {[
+            { key: 'details', icon: 'information-circle', label: 'Details' },
+            { key: 'members', icon: 'people', label: 'Members' },
+            { key: 'subscription', icon: 'card', label: 'Subscription' },
+            { key: 'roles', icon: 'shield', label: 'Roles' }
+          ].map((tab) => (
+            <TouchableOpacity
+              key={tab.key}
+              style={[styles.tabButton, activeTab === tab.key && styles.activeTabButton]}
+              onPress={() => setActiveTab(tab.key)}
+            >
+              <Ionicons
+                name={tab.icon}
+                size={20}
+                color={activeTab === tab.key ? '#3498db' : '#666'}
+              />
+              <Text style={[styles.tabLabel, activeTab === tab.key && styles.activeTabLabel]}>
+                {tab.label}
+              </Text>
+              {activeTab === tab.key && <View style={styles.tabIndicator} />}
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
       </View>
 
       {/* Tab Content */}
@@ -458,146 +436,224 @@ const OrganizationManagementScreen = ({ navigation, route }) => {
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
-      >
-        {activeTab === 'details' && (
+      >        {activeTab === 'details' && (
           <View style={styles.tabContent}>
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Organization Details</Text>
-              <View style={styles.detailRow}>
-                <Ionicons name="business-outline" size={20} color="#555" style={styles.detailIcon} />
-                <Text style={styles.detailLabel}>Name:</Text>
-                <Text style={styles.detailValue}>{organization?.name}</Text>
+            {/* Organization Info Card */}
+            <View style={styles.modernCard}>
+              <View style={styles.cardHeader}>
+                <View style={styles.cardIconContainer}>
+                  <Ionicons name="business" size={24} color="#3498db" />
+                </View>
+                <Text style={styles.cardTitle}>Organization Information</Text>
               </View>
               
-              <View style={styles.detailRow}>
-                <Ionicons name="map-outline" size={20} color="#555" style={styles.detailIcon} />
-                <Text style={styles.detailLabel}>Address:</Text>
-                <Text style={styles.detailValue}>{organization?.address || 'Not provided'}</Text>
+              <View style={styles.cardContent}>
+                {[
+                  { icon: 'business', label: 'Name', value: organization?.name },
+                  { icon: 'location', label: 'Address', value: organization?.address || 'Not provided' },
+                  { icon: 'mail', label: 'Email', value: organization?.email || 'Not provided' },
+                  { icon: 'call', label: 'Phone', value: organization?.phone || 'Not provided' },
+                  { icon: 'globe', label: 'Website', value: organization?.website || 'Not provided' },
+                  { icon: 'person-circle', label: 'Owner', value: `${organization?.primary_owner?.first_name || ''} ${organization?.primary_owner?.last_name || ''}`.trim() || 'Not specified' }
+                ].map((item, index) => (
+                  <View key={index} style={styles.infoRow}>
+                    <View style={styles.infoIconContainer}>
+                      <Ionicons name={item.icon} size={18} color="#666" />
+                    </View>
+                    <View style={styles.infoContent}>
+                      <Text style={styles.infoLabel}>{item.label}</Text>
+                      <Text style={styles.infoValue}>{item.value}</Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </View>
+            
+            {/* Description Card */}
+            <View style={styles.modernCard}>
+              <View style={styles.cardHeader}>
+                <View style={styles.cardIconContainer}>
+                  <Ionicons name="document-text" size={24} color="#9b59b6" />
+                </View>
+                <Text style={styles.cardTitle}>Description</Text>
               </View>
               
-              <View style={styles.detailRow}>
-                <Ionicons name="mail-outline" size={20} color="#555" style={styles.detailIcon} />
-                <Text style={styles.detailLabel}>Email:</Text>
-                <Text style={styles.detailValue}>{organization?.email || 'Not provided'}</Text>
-              </View>
-              
-              <View style={styles.detailRow}>
-                <Ionicons name="call-outline" size={20} color="#555" style={styles.detailIcon} />
-                <Text style={styles.detailLabel}>Phone:</Text>
-                <Text style={styles.detailValue}>{organization?.phone || 'Not provided'}</Text>
-              </View>
-              
-              <View style={styles.detailRow}>
-                <Ionicons name="globe-outline" size={20} color="#555" style={styles.detailIcon} />
-                <Text style={styles.detailLabel}>Website:</Text>
-                <Text style={styles.detailValue}>{organization?.website || 'Not provided'}</Text>
-              </View>
-              
-              <View style={styles.detailRow}>
-                <Ionicons name="person-outline" size={20} color="#555" style={styles.detailIcon} />
-                <Text style={styles.detailLabel}>Owner:</Text>
-                <Text style={styles.detailValue}>
-                  {organization?.primary_owner?.first_name} {organization?.primary_owner?.last_name || ''}
+              <View style={styles.cardContent}>
+                <Text style={styles.descriptionText}>
+                  {organization?.description || 'No description provided for this organization.'}
                 </Text>
               </View>
             </View>
             
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Description</Text>
-              <Text style={styles.descriptionText}>
-                {organization?.description || 'No description provided.'}
-              </Text>
-            </View>
-            
-            <TouchableOpacity
-              style={styles.editButton}
+            {/* Organization Stats Card */}
+            <View style={styles.modernCard}>
+              <View style={styles.cardHeader}>
+                <View style={styles.cardIconContainer}>
+                  <Ionicons name="stats-chart" size={24} color="#e67e22" />
+                </View>
+                <Text style={styles.cardTitle}>Quick Stats</Text>
+              </View>
+              
+              <View style={styles.statsContainer}>
+                <View style={styles.statItem}>
+                  <Text style={styles.statNumber}>{members?.length || 0}</Text>
+                  <Text style={styles.statLabel}>Members</Text>
+                </View>
+                <View style={styles.statDivider} />
+                <View style={styles.statItem}>
+                  <Text style={styles.statNumber}>{roles?.length || 0}</Text>
+                  <Text style={styles.statLabel}>Roles</Text>
+                </View>
+                <View style={styles.statDivider} />
+                <View style={styles.statItem}>
+                  <Text style={styles.statNumber}>
+                    {organization?.created_at 
+                      ? Math.floor((new Date() - new Date(organization.created_at)) / (1000 * 60 * 60 * 24))
+                      : '0'
+                    }
+                  </Text>
+                  <Text style={styles.statLabel}>Days Active</Text>
+                </View>
+              </View>
+            </View>            <TouchableOpacity
+              style={styles.primaryActionButton}
               onPress={() => navigation.navigate('EditOrganization', { organization })}
             >
-              <Ionicons name="create-outline" size={20} color="#fff" />
-              <Text style={styles.editButtonText}>Edit Organization Details</Text>
+              <View style={styles.buttonContainer}>
+                <Ionicons name="create" size={20} color="#fff" />
+                <Text style={styles.primaryActionText}>Edit Organization</Text>
+              </View>
             </TouchableOpacity>
           </View>
         )}
-        
-        {activeTab === 'members' && (
+          {activeTab === 'members' && (
           <View style={styles.tabContent}>
-            <View style={styles.section}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Organization Members</Text>
-                <TouchableOpacity 
-                  style={styles.inviteButton}
-                  onPress={handleInviteUser}
-                >
+            {/* Members Header */}
+            <View style={styles.membersHeader}>
+              <View style={styles.membersHeaderInfo}>
+                <Text style={styles.membersTitle}>Team Members</Text>
+                <Text style={styles.membersSubtitle}>{members.length} total members</Text>
+              </View>              <TouchableOpacity
+                style={styles.inviteButton}
+                onPress={handleInviteUser}
+              >
+                <View style={styles.inviteButtonContainer}>
                   <Ionicons name="person-add" size={18} color="#fff" />
                   <Text style={styles.inviteButtonText}>Invite</Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+
+            {members.length === 0 ? (
+              <View style={styles.emptyStateCard}>
+                <View style={styles.emptyStateIcon}>
+                  <Ionicons name="people" size={48} color="#bdc3c7" />
+                </View>
+                <Text style={styles.emptyStateTitle}>No members yet</Text>
+                <Text style={styles.emptyStateSubtitle}>
+                  Start building your team by inviting members to your organization
+                </Text>
+                <TouchableOpacity style={styles.emptyStateButton} onPress={handleInviteUser}>
+                  <Text style={styles.emptyStateButtonText}>Invite Your First Member</Text>
                 </TouchableOpacity>
               </View>
-              
-              {members.length === 0 ? (
-                <View style={styles.emptyState}>
-                  <Ionicons name="people" size={40} color="#ccc" />
-                  <Text style={styles.emptyStateText}>No members found</Text>
-                  <Text style={styles.emptyStateSubText}>Invite members to your organization</Text>
-                </View>
-              ) : 
-              members.map((member) => 
-                (
-                  <View key={member.id} style={styles.memberItem}>
-                    <View style={styles.memberInfo}>                      <View style={styles.memberAvatar}>                        <Text style={styles.memberInitial}>
-                          {(
-                            (member.user_details?.first_name && member.user_details.first_name.charAt(0)) || 
-                            (member.user_details?.email && member.user_details.email.charAt(0)) ||
-                            (member.user_details?.username && member.user_details.username.charAt(0)) ||
-                            (member.user?.first_name && member.user.first_name.charAt(0)) || 
-                            (member.user?.email && member.user.email.charAt(0)) ||
-                            (member.user?.username && member.user.username.charAt(0)) ||
-                            '?'
-                          ).toUpperCase()}
-                        </Text>
-                      </View>                      <View style={styles.memberDetails}>                        <Text style={styles.memberName}>
-                          {member.user_details?.first_name || 
-                           member.user?.first_name || 
-                           member.user_details?.email?.split('@')[0] || 
-                           member.user?.email?.split('@')[0] || 
-                           'User'} {member.user_details?.last_name || member.user?.last_name || ''}
-                          {(member.user_details?.id === user?.id || member.user?.id === user?.id) && (
-                            <Text style={styles.currentUserLabel}> (You)</Text>
-                          )}
-                        </Text>
-                        <Text style={styles.memberEmail}>{member.user_details?.email || member.user?.email}</Text><View style={styles.roleBadge}>
-                          <Text style={styles.roleBadgeText}>
-                            {
-                              // Try multiple ways to get the role name
-                              (member.role && typeof member.role === 'object' && member.role.name) ||
-                              (member.role_details && member.role_details.name) ||
-                              (member.role && typeof member.role === 'string' && roles.find(r => r.id.toString() === member.role.toString())?.name) ||
-                              'Member'
-                            }
+            ) : (              <View style={styles.modernCard}>
+                {members.map((member, index) => {
+                  console.log('🎭 Rendering member:', {
+                    id: member.id,
+                    user_details: member.user_details,
+                    user: member.user,
+                    memberKeys: Object.keys(member)
+                  });
+                  
+                  return (
+                  <View key={member.id}>
+                    <View style={styles.memberCard}>
+                      <View style={styles.memberInfo}>                        <View style={[
+                          styles.memberAvatar,
+                          { backgroundColor: `hsl(${(member.id?.toString().split('').reduce((a, b) => a + b.charCodeAt(0), 0) * 137.5) % 360}, 70%, 50%)` }
+                        ]}>
+                          <Text style={styles.memberInitial}>
+                            {(() => {
+                              // Get the first name or fallback to email prefix
+                              const firstName = member.user_details?.first_name || member.user?.first_name;
+                              const lastName = member.user_details?.last_name || member.user?.last_name;
+                              const email = member.user_details?.email || member.user?.email;
+                              const username = member.user_details?.username || member.user?.username;
+                              
+                              if (firstName && lastName) {
+                                return (firstName.charAt(0) + lastName.charAt(0)).toUpperCase();
+                              } else if (firstName) {
+                                return firstName.charAt(0).toUpperCase();
+                              } else if (email) {
+                                return email.charAt(0).toUpperCase();
+                              } else if (username) {
+                                return username.charAt(0).toUpperCase();
+                              }
+                              return 'U';
+                            })()}
                           </Text>
                         </View>
+                        
+                        <View style={styles.memberDetails}>
+                          <View style={styles.memberNameContainer}>
+                            <Text style={styles.memberName}>
+                              {member.user_details?.first_name ||
+                               member.user?.first_name ||
+                               member.user_details?.email?.split('@')[0] ||
+                               member.user?.email?.split('@')[0] ||
+                               'User'} {member.user_details?.last_name || member.user?.last_name || ''}
+                            </Text>
+                            {(member.user_details?.id === user?.id || member.user?.id === user?.id) && (
+                              <View style={styles.youBadge}>
+                                <Text style={styles.youBadgeText}>You</Text>
+                              </View>
+                            )}
+                          </View>
+                          
+                          <Text style={styles.memberEmail}>
+                            {member.user_details?.email || member.user?.email}
+                          </Text>
+                          
+                          <View style={styles.memberRoleBadge}>
+                            <Ionicons name="shield-checkmark" size={12} color="#3498db" />
+                            <Text style={styles.memberRoleText}>
+                              {
+                                (member.role && typeof member.role === 'object' && member.role.name) ||
+                                (member.role_details && member.role_details.name) ||
+                                (member.role && typeof member.role === 'string' && 
+                                 roles.find(r => r.id.toString() === member.role.toString())?.name) ||
+                                'Member'
+                              }
+                            </Text>
+                          </View>
+                        </View>
+                      </View>
+
+                      <View style={styles.memberActions}>
+                        <TouchableOpacity
+                          style={styles.actionButton}
+                          onPress={() => handleManageUserRole(member)}
+                        >
+                          <Ionicons name="settings" size={18} color="#3498db" />
+                        </TouchableOpacity>
+                        
+                        {(member.user_details?.id !== user?.id && member.user?.id !== user?.id) && (
+                          <TouchableOpacity
+                            style={[styles.actionButton, styles.dangerButton]}
+                            onPress={() => handleRemoveUser(member)}
+                          >
+                            <Ionicons name="trash" size={18} color="#e74c3c" />
+                          </TouchableOpacity>
+                        )}
                       </View>
                     </View>
-                    
-                    <View style={styles.memberActions}>
-                      <TouchableOpacity
-                        style={styles.memberActionButton}
-                        onPress={() => handleManageUserRole(member)}
-                      >
-                        <Ionicons name="shield-outline" size={20} color="#3498db" />
-                      </TouchableOpacity>                        {(member.user_details?.id !== user?.id && member.user?.id !== user?.id) && (
-                        <TouchableOpacity
-                          style={styles.memberActionButton}
-                          onPress={() => handleRemoveUser(member)}
-                        >
-                          <Ionicons name="trash-outline" size={20} color="#e74c3c" />
-                      </TouchableOpacity>
-                      )}
-                    </View>
+                      {index < members.length - 1 && <View style={styles.memberDivider} />}
                   </View>
-                )
-              )
-              }
-            </View>
+                  );
+                })}
+              </View>
+            )}
           </View>
         )}
         
@@ -982,7 +1038,10 @@ const OrganizationManagementScreen = ({ navigation, route }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',  },
+    backgroundColor: '#f8f9fa',
+  },
+  
+  // Loading and Error States
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -990,9 +1049,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
   },
   loadingText: {
-    marginTop: 10,
+    marginTop: 16,
     fontSize: 16,
     color: '#666',
+    fontWeight: '500',
   },
   errorContainer: {
     flex: 1,
@@ -1005,186 +1065,310 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     color: '#e74c3c',
-    marginTop: 10,
+    marginTop: 16,
   },
   errorText: {
     fontSize: 16,
     color: '#666',
-    textAlign: 'center',    
-    marginTop: 10,
+    textAlign: 'center',
+    marginTop: 12,
+    lineHeight: 22,
   },
   retryButton: {
-    marginTop: 20,
+    marginTop: 24,
     backgroundColor: '#3498db',
     paddingVertical: 12,
     paddingHorizontal: 24,
-    borderRadius: 8,
+    borderRadius: 12,
+    elevation: 2,
   },
   retryButtonText: {
     color: '#fff',
-    fontSize: 16,    fontWeight: '600',
-  },
-  // Header styles
-  header: {
+    fontSize: 16,
+    fontWeight: '600',
+  },  // Modern Header Styles
+  headerContainer: {
     backgroundColor: '#3498db',
-    padding: 24,
-    paddingTop: 30,
+    paddingTop: 50,
+    paddingBottom: 24,
+    paddingHorizontal: 20,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
   },
   headerContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
   },
+  organizationInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  organizationIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  organizationDetails: {
+    flex: 1,
+  },
   organizationName: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: 'bold',
     color: '#fff',
-    marginBottom: 5,
-    textShadowColor: 'rgba(0,0,0,0.3)',
-    textShadowOffset: { width: 1, height: 1 },
-    textShadowRadius: 2,
+    marginBottom: 4,
   },
-  organizationDetail: {
+  memberCount: {
     fontSize: 14,
     color: 'rgba(255,255,255,0.9)',
-    marginTop: 2,
   },
-  userRoleBadge: {
+  roleBadgeContainer: {
+    alignItems: 'flex-end',
+  },
+  roleBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: 'rgba(255,255,255,0.2)',
     paddingHorizontal: 12,
-    paddingVertical: 4,
+    paddingVertical: 6,
     borderRadius: 20,
-    alignSelf: 'flex-start',
-    marginTop: 10,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.3)',
   },
-  userRoleBadgeText: {
+  roleBadgeText: {
     color: '#fff',
-    fontSize: 14,    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 4,
+    textTransform: 'capitalize',
   },
-  // Tab navigation styles
+
+  // Enhanced Tab Navigation
   tabContainer: {
-    flexDirection: 'row',
     backgroundColor: '#fff',
     borderBottomWidth: 1,
-    borderBottomColor: '#e1e1e1',
+    borderBottomColor: '#e1e8ed',
     elevation: 2,
   },
-  tabButton: {
-    flex: 1,
+  tabScrollView: {
     flexDirection: 'row',
+  },
+  tabButton: {
+    paddingVertical: 16,
+    paddingHorizontal: 20,
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 15,
-    borderBottomWidth: 3,
-    borderBottomColor: 'transparent',
-    gap: 6,
+    minWidth: width / 4,
+    position: 'relative',
   },
   activeTabButton: {
-    backgroundColor: '#3498db',
-    borderBottomColor: '#2980b9',
+    backgroundColor: 'transparent',
   },
-  tabButtonText: {
+  tabLabel: {
     fontSize: 14,
-    color: '#555',
+    color: '#666',
     fontWeight: '500',
+    marginTop: 4,
   },
-  activeTabButtonText: {
-    color: '#fff',    fontWeight: '600',
+  activeTabLabel: {
+    color: '#3498db',
+    fontWeight: '600',
   },
-  // Content styles
+  tabIndicator: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 3,
+    backgroundColor: '#3498db',
+    borderRadius: 2,
+  },
+
+  // Content Styles
   scrollContent: {
     flexGrow: 1,
     paddingBottom: 20,
   },
   tabContent: {
-    padding: 15,
+    padding: 16,
   },
-  section: {
+
+  // Modern Card Styles
+  modernCard: {
     backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 20,
-    marginBottom: 15,
+    borderRadius: 16,
+    marginBottom: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',    marginBottom: 15,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#333',
-    marginBottom: 15,
-  },
-  
-  // Organization details tab
-  detailRow: {
+  cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f3f4',
   },
-  detailIcon: {
-    marginRight: 10,
-    width: 24,
+  cardIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#f8f9fa',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
   },
-  detailLabel: {
-    fontSize: 16,
-    color: '#666',
-    width: 80,
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#2c3e50',
   },
-  detailValue: {
-    fontSize: 16,
-    color: '#333',
+  cardContent: {
+    padding: 20,
+  },
+
+  // Info Row Styles
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  infoIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#f8f9fa',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  infoContent: {
     flex: 1,
-  },  descriptionText: {
+  },
+  infoLabel: {
+    fontSize: 12,
+    color: '#7f8c8d',
+    fontWeight: '500',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  infoValue: {
+    fontSize: 16,
+    color: '#2c3e50',
+    fontWeight: '500',
+    marginTop: 2,
+  },
+
+  // Description Styles
+  descriptionText: {
     fontSize: 15,
     color: '#555',
-    lineHeight: 20,
+    lineHeight: 22,
+    fontStyle: 'italic',
   },
-  editButton: {
-    backgroundColor: '#3498db',
+
+  // Stats Container
+  statsContainer: {
+    flexDirection: 'row',
+    padding: 20,
+    justifyContent: 'space-around',
+  },
+  statItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  statNumber: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#3498db',
+  },
+  statLabel: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  statDivider: {
+    width: 1,
+    backgroundColor: '#e1e8ed',
+    marginHorizontal: 16,
+  },
+  // Action Buttons
+  primaryActionButton: {
+    borderRadius: 12,
+    overflow: 'hidden',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    backgroundColor: '#3498db', // Solid background
+  },  buttonContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 14,
-    borderRadius: 8,
-    marginTop: 15,
-    elevation: 2,
-  },  editButtonText: {
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+  },
+  primaryActionText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
-    marginLeft: 8
+    marginLeft: 8,
   },
-  
-  // Members tab  
-  inviteButton: {
-    backgroundColor: '#3498db',
+
+  // Members Tab Styles
+  membersHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  membersHeaderInfo: {
+    flex: 1,
+  },
+  membersTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#2c3e50',
+  },
+  membersSubtitle: {
+    fontSize: 14,
+    color: '#7f8c8d',
+    marginTop: 2,
+  },  inviteButton: {
+    borderRadius: 10,
+    overflow: 'hidden',
+    elevation: 2,
+    backgroundColor: '#27ae60', // Solid green background
+  },  inviteButtonContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 8,
-    gap: 5,
-    elevation: 2,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
   },
   inviteButtonText: {
     color: '#fff',
     fontSize: 14,
     fontWeight: '600',
+    marginLeft: 6,
   },
-  memberItem: {
+
+  // Member Cards
+  memberCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    padding: 16,
   },
   memberInfo: {
     flexDirection: 'row',
@@ -1192,185 +1376,277 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   memberAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#3498db',
+    width: 50,
+    height: 50,
+    borderRadius: 25,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: 16,
   },
   memberInitial: {
     color: '#fff',
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: 'bold',
-  },  memberDetails: {
+  },
+  memberDetails: {
     flex: 1,
+  },
+  memberNameContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
   },
   memberName: {
     fontSize: 16,
-    fontWeight: '500',
-    color: '#333',
+    fontWeight: '600',
+    color: '#2c3e50',
+    marginRight: 8,
   },
-  currentUserLabel: {
-    fontStyle: 'italic',
-    color: '#666',
-    fontWeight: 'normal',
-  },
-  memberEmail: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 2,
-  },
-  roleBadge: {
-    backgroundColor: '#f0f0f0',
+  youBadge: {
+    backgroundColor: '#3498db',
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 10,
-    marginTop: 5,
+  },
+  youBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  memberEmail: {
+    fontSize: 14,
+    color: '#7f8c8d',
+    marginBottom: 6,
+  },
+  memberRoleBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#e3f2fd',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
     alignSelf: 'flex-start',
   },
-  roleBadgeText: {
-    fontSize: 12,
-    color: '#555',
+  memberRoleText: {
+    fontSize: 11,
+    color: '#3498db',
+    fontWeight: '600',
+    marginLeft: 4,
   },
   memberActions: {
     flexDirection: 'row',
   },
-  memberActionButton: {
-    padding: 8,
-    marginLeft: 5,  },
-  // Subscription tab
+  actionButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#f8f9fa',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  dangerButton: {
+    backgroundColor: '#ffebee',
+  },
+  memberDivider: {
+    height: 1,
+    backgroundColor: '#f1f3f4',
+    marginHorizontal: 16,
+  },
+
+  // Empty States
+  emptyStateCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 40,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  emptyStateIcon: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#f8f9fa',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  emptyStateTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#2c3e50',
+    marginBottom: 8,
+  },
+  emptyStateSubtitle: {
+    fontSize: 14,
+    color: '#7f8c8d',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  emptyStateButton: {
+    backgroundColor: '#3498db',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+  },  emptyStateButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+
+  // Subscription Tab Styles
   subscriptionCard: {
     backgroundColor: '#fff',
-    borderRadius: 10,
-    padding: 15,
-    borderWidth: 1,
-    borderColor: '#eaeaea',
+    borderRadius: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+    overflow: 'hidden',
   },
   subscriptionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    padding: 20,
+    backgroundColor: '#f8f9fa',
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-    paddingBottom: 10,
+    borderBottomColor: '#e1e8ed',
   },
   planName: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#333',
+    color: '#2c3e50',
   },
   statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 15,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    elevation: 1,
   },
   statusText: {
     color: '#fff',
     fontSize: 12,
     fontWeight: '600',
     textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   subscriptionDetails: {
-    paddingVertical: 10,
+    padding: 20,
   },
   subscriptionRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 8,
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f3f4',
   },
   subscriptionLabel: {
     fontSize: 15,
-    color: '#666',
+    color: '#7f8c8d',
+    fontWeight: '500',
   },
   subscriptionValue: {
     fontSize: 15,
-    color: '#333',
-    fontWeight: '500',
+    color: '#2c3e50',
+    fontWeight: '600',
   },
   planFeatures: {
-    paddingTop: 15,
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
+    padding: 20,
+    backgroundColor: '#f8f9fa',
   },
   featuresTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#333',
-    marginBottom: 10,
+    color: '#2c3e50',
+    marginBottom: 16,
   },
   featureRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 12,
   },
   featureText: {
-    fontSize: 15,
+    fontSize: 14,
     color: '#555',
-    marginLeft: 10,
+    marginLeft: 12,
+    flex: 1,
   },
   planLimits: {
-    paddingTop: 15,
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
-    marginTop: 15,
+    padding: 20,
   },
   limitsTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#333',
-    marginBottom: 10,
+    color: '#2c3e50',
+    marginBottom: 16,
   },
   limitRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    alignItems: 'center',
+    paddingVertical: 8,
   },
   limitLabel: {
-    fontSize: 15,
-    color: '#666',
+    fontSize: 14,
+    color: '#7f8c8d',
+    fontWeight: '500',
   },
   limitValue: {
-    fontSize: 15,
-    color: '#333',
-    fontWeight: '500',
+    fontSize: 14,
+    color: '#2c3e50',
+    fontWeight: '600',
   },
   manageSubscriptionButton: {
     backgroundColor: '#3498db',
-    padding: 12,
-    borderRadius: 8,
+    borderRadius: 12,
+    paddingVertical: 16,
     alignItems: 'center',
-    marginTop: 20,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
   },
   manageSubscriptionText: {
     color: '#fff',
     fontSize: 16,
-    fontWeight: '500',
+    fontWeight: '600',
   },
-  
-  // Roles tab
-  addButton: {
-    backgroundColor: '#27ae60',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 5,
-    gap: 5,
+  setupButton: {
+    backgroundColor: '#3498db',
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    elevation: 2,
   },
-  addButtonText: {
+  setupButtonText: {
     color: '#fff',
-    fontSize: 14,
-    fontWeight: '500',
+    fontSize: 16,
+    fontWeight: '600',
   },
+
+  // Roles Tab Styles
   roleItem: {
-    backgroundColor: '#f9f9f9',
-    borderRadius: 8,
-    padding: 15,
+    backgroundColor: '#fff',
+    borderRadius: 12,
     marginBottom: 12,
+    padding: 16,
     borderLeftWidth: 4,
     borderLeftColor: '#3498db',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   roleHeader: {
     flexDirection: 'row',
@@ -1381,71 +1657,89 @@ const styles = StyleSheet.create({
   roleName: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#333',
+    color: '#2c3e50',
   },
   roleType: {
-    fontSize: 14,
-    color: '#666',
-    fontStyle: 'italic',
+    fontSize: 12,
+    color: '#7f8c8d',
+    fontWeight: '500',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   roleDescription: {
     fontSize: 14,
     color: '#666',
-    marginBottom: 10,
+    marginBottom: 12,
+    lineHeight: 20,
   },
   permissionsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 5,
-    marginTop: 5,
+    marginBottom: 8,
   },
   permissionBadge: {
     backgroundColor: '#e3f2fd',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 12,
-    marginRight: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    marginRight: 8,
     marginBottom: 6,
   },
   permissionText: {
     fontSize: 12,
-    color: '#2980b9',
-  },
-  roleActions: {
+    color: '#3498db',
+    fontWeight: '500',
+  },  roleActions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
+    alignItems: 'center',
     marginTop: 8,
   },
-  
-  // Empty state
+
+  // Additional Styles for Section and Empty States
+  section: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f3f4',
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#2c3e50',
+    marginBottom: 0,
+  },
   emptyState: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 30,
+    paddingVertical: 40,
+    paddingHorizontal: 20,
   },
   emptyStateText: {
     fontSize: 18,
-    fontWeight: '500',
-    color: '#555',
-    marginTop: 15,
+    fontWeight: '600',
+    color: '#666',
+    marginTop: 16,
+    textAlign: 'center',
   },
   emptyStateSubText: {
     fontSize: 14,
     color: '#999',
-    marginTop: 5,
-    marginBottom: 20,
-  },
-  setupButton: {
-    backgroundColor: '#3498db',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 6,
-    marginTop: 15,
-  },
-  setupButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '500',
+    marginTop: 8,
+    textAlign: 'center',
+    lineHeight: 20,
   },
 });
 

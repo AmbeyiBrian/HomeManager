@@ -9,6 +9,8 @@ router.register(r'subscriptions', views.SubscriptionViewSet)
 router.register(r'subscription-payments', views.SubscriptionPaymentViewSet)
 router.register(r'roles', views.OrganizationRoleViewSet)
 router.register(r'memberships', views.OrganizationMembershipViewSet)
+router.register(r'base-roles', views.BaseRoleViewSet)
+router.register(r'role-customizations', views.OrganizationRoleCustomizationViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),

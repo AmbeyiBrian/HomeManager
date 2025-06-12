@@ -1,19 +1,45 @@
-# HomeManager Project
+# HomeManager Documentation
+
+This directory contains all documentation for the HomeManager project. Documentation is organized into the following categories:
+
+## Directory Structure
+
+- **api/** - API documentation and implementation details
+  - API endpoints documentation
+  - QR Code API implementation and development notes
+
+- **development/** - Development guides and practices
+  - Git versioning guide
+  - Dummy data generation guide
+
+- **features/** - Core feature documentation
+  - Backend documentation
+  - Frontend documentation
+
+- **mobile/** - Mobile app documentation
+  - Mobile app overview
+  - QR code manager documentation
+  - Property detail fixes
+  - Screen documentation
+
+- **organization/** - Organization feature documentation
+  - Organization screen improvements
+  - Organization name updates
+  - Organization filtering implementation
+  - Multi-tenant security implementation
+
+- **security/** - Security-related documentation
+  - RBAC (Role-Based Access Control) implementation
+  - RBAC usage guide
+  - Role management implementation
+  - Customizable role permissions plan
+  - Multi-tenant security implementation
+
+## Project Overview
 
 HomeManager is a comprehensive property management system designed to help landlords, property managers, and organizations efficiently manage their real estate assets, tenants, and related operations. The system prioritizes SMS-based communication with tenants, recognizing that mobile phones are the most reliable way to reach tenants.
 
 The platform is built with multi-organization support at its core - each user belongs to a specific organization and can only access data within their organization's scope. This ensures complete data isolation and security between different property management companies using the system.
-
-## Documentation
-
-All project documentation has been consolidated into the `/docs` directory. Please refer to the [Documentation Index](./docs/README.md) for a complete overview of available documentation.
-
-## Quick Links
-
-- [API Documentation](./docs/api/API_ENDPOINTS_DOCUMENTATION.md)
-- [Security Implementation](./docs/security/RBAC_IMPLEMENTATION.md)
-- [Mobile Documentation](./docs/mobile/MOBILE_README.md)
-- [Development Guide](./docs/development/GIT_VERSIONING_GUIDE.md)
 
 ## Backend Structure
 

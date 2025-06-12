@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -37,9 +37,8 @@ const RoleManagementScreen = ({ navigation }) => {
     name: '',
     description: '',
     permissions: []
-  });
-  // Available permissions
-  const availablePermissions = [
+  });  // Available permissions - memoized to prevent re-renders
+  const availablePermissions = useMemo(() => [
     { key: 'can_manage_users', label: 'Manage Users' },
     { key: 'can_manage_billing', label: 'Manage Billing' },
     { key: 'can_manage_properties', label: 'Manage Properties' },
@@ -50,10 +49,16 @@ const RoleManagementScreen = ({ navigation }) => {
     { key: 'can_view_dashboard', label: 'View Dashboard' },
     { key: 'can_manage_tickets', label: 'Manage Tickets' },
     { key: 'manage_notices', label: 'Manage Notices' }
-  ];
-  // Check if user has permission to manage roles
+  ], []);
+
+  // Memoized permission check
+  const canManageRoles = useMemo(() => {
+    return hasPermission('can_manage_roles');
+  }, [hasPermission]);
+
+  // Check if user has permission to manage roles - only run once
   useEffect(() => {
-    if (!hasPermission('can_manage_roles')) {
+    if (canManageRoles === false) {
       Alert.alert(
         'Permission Denied',
         'You do not have permission to manage roles.',
@@ -62,21 +67,26 @@ const RoleManagementScreen = ({ navigation }) => {
         ]
       );
     }
-  }, [hasPermission, navigation]);
-
+  }, [canManageRoles, navigation]);
+  // Fetch roles only once when component mounts and user has permission
   useEffect(() => {
-    if (hasPermission('can_manage_roles')) {
+    if (canManageRoles && roles.length === 0 && !rolesLoading) {
+      console.log('💥 Roles tab activated but no roles data found, fetching roles...');
       fetchRoles();
     }
-  }, [hasPermission]);
+  }, [canManageRoles, roles.length, rolesLoading]); // Remove fetchRoles from dependencies to prevent loop
 
-  const onRefresh = async () => {
+  const onRefresh = useCallback(async () => {
+    if (!canManageRoles || isOffline) return;
+    
     setRefreshing(true);
-    await fetchRoles(true);
-    setRefreshing(false);
-  };
-
-  const openRoleModal = (role = null) => {
+    try {
+      await fetchRoles(true);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [canManageRoles, isOffline, fetchRoles]);
+  const openRoleModal = useCallback((role = null) => {
     if (role) {
       setSelectedRole(role);
       // Extract permissions from backend role format
@@ -92,40 +102,43 @@ const RoleManagementScreen = ({ navigation }) => {
       setRoleForm({ name: '', description: '', permissions: [] });
     }
     setRoleModalVisible(true);
-  };
+  }, [getRolePermissions]);
+  const handleSaveRole = useCallback(async () => {
+    if (!selectedRole) {
+      Alert.alert('Error', 'No role selected');
+      return;
+    }
 
-  const handleSaveRole = async () => {
-    if (!roleForm.name.trim()) {
-      Alert.alert('Error', 'Role name is required');
+    if (isOffline) {
+      Alert.alert('Error', 'Cannot save changes while offline');
       return;
     }
 
     try {
-      let result;
-      
-      if (selectedRole) {
-        // Update existing role
-        result = await createOrUpdateRole({
-          ...roleForm,
-          nameChanged: selectedRole.name !== roleForm.name
-        }, selectedRole.id);
-      } else {
-        // Create new role
-        result = await createOrUpdateRole(roleForm);
-      }
+      // Only update permissions for existing predefined roles
+      const result = await createOrUpdateRole({
+        permissions: roleForm.permissions
+      }, selectedRole.id);
       
       if (result.success) {
         setRoleModalVisible(false);
-        onRefresh();
+        // Refresh roles after successful save
+        await fetchRoles(true);
+        Alert.alert('Success', 'Role permissions updated successfully');
       } else {
-        Alert.alert('Error', result.error || 'Failed to save role');
+        Alert.alert('Error', result.error || 'Failed to update role permissions');
       }
     } catch (error) {
       Alert.alert('Error', error.message || 'An unexpected error occurred');
     }
-  };
+  }, [roleForm.permissions, selectedRole, isOffline, createOrUpdateRole, fetchRoles]);
 
-  const handleDeleteRole = (roleId, roleName) => {
+  const handleDeleteRole = useCallback((roleId, roleName) => {
+    if (isOffline) {
+      Alert.alert('Error', 'Cannot delete roles while offline');
+      return;
+    }
+
     Alert.alert(
       'Delete Role',
       `Are you sure you want to delete the role "${roleName}"?`,
@@ -138,7 +151,8 @@ const RoleManagementScreen = ({ navigation }) => {
             try {
               const result = await deleteRole(roleId);
               if (result.success) {
-                onRefresh();
+                // Refresh roles after successful delete
+                await fetchRoles(true);
               } else {
                 Alert.alert('Error', result.error || 'Failed to delete role');
               }
@@ -149,9 +163,9 @@ const RoleManagementScreen = ({ navigation }) => {
         }
       ]
     );
-  };
+  }, [isOffline, deleteRole, fetchRoles]);
 
-  const togglePermission = (permission) => {
+  const togglePermission = useCallback((permission) => {
     setRoleForm(prevForm => {
       if (prevForm.permissions.includes(permission)) {
         return {
@@ -165,18 +179,18 @@ const RoleManagementScreen = ({ navigation }) => {
         };
       }
     });
-  };
-
-  const renderRoleItem = ({ item }) => (
+  }, []);
+  const renderRoleItem = useCallback(({ item }) => (
     <View style={styles.roleCard}>
       <View style={styles.roleHeader}>
-        <Text style={styles.roleName}>{item.name}</Text>
-        <View style={styles.roleActions}>
-          <TouchableOpacity onPress={() => openRoleModal(item)} style={styles.actionButton}>
-            <Ionicons name="pencil" size={18} color="#007bff" />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => handleDeleteRole(item.id, item.name)} style={styles.actionButton}>
-            <Ionicons name="trash" size={18} color="#dc3545" />
+        <Text style={styles.roleName}>{item.name}</Text>        <View style={styles.roleActions}>
+          <TouchableOpacity 
+            onPress={() => openRoleModal(item)} 
+            style={styles.actionButton}
+            disabled={isOffline}
+          >
+            <Ionicons name="settings" size={18} color={isOffline ? "#ccc" : "#007bff"} />
+            <Text style={styles.actionButtonText}>Customize</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -198,12 +212,22 @@ const RoleManagementScreen = ({ navigation }) => {
         </View>
       </View>
     </View>
-  );
-
-  if (rolesLoading && !refreshing) {
+  ), [openRoleModal, handleDeleteRole, getRolePermissions, availablePermissions, isOffline]);
+  // Don't show loading if we're just refreshing and already have data
+  if (rolesLoading && !refreshing && (!roles || roles.length === 0)) {
     return (
       <View style={styles.centerContainer}>
         <ActivityIndicator size="large" color="#007bff" />
+        <Text style={styles.loadingText}>Loading roles...</Text>
+      </View>
+    );
+  }
+
+  // Don't render if user doesn't have permission
+  if (canManageRoles === false) {
+    return (
+      <View style={styles.centerContainer}>
+        <Text style={styles.noPermissionText}>You don't have permission to manage roles.</Text>
       </View>
     );
   }
@@ -216,16 +240,11 @@ const RoleManagementScreen = ({ navigation }) => {
           <Text style={styles.offlineText}>Offline Mode</Text>
         </View>
       )}
-      
-      <View style={styles.header}>
+        <View style={styles.header}>
         <Text style={styles.headerTitle}>Role Management</Text>
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={() => openRoleModal()}
-          disabled={isOffline}
-        >
-          <Ionicons name="add" size={24} color="white" />
-        </TouchableOpacity>
+        <View style={styles.headerSubtitle}>
+          <Text style={styles.subtitleText}>Customize permissions for predefined roles</Text>
+        </View>
       </View>
       
       {rolesError ? (
@@ -235,31 +254,24 @@ const RoleManagementScreen = ({ navigation }) => {
             <Text style={styles.retryText}>Retry</Text>
           </TouchableOpacity>
         </View>
-      ) : (
-        <FlatList
-          data={roles}
+      ) : (        <FlatList
+          data={roles || []}
           renderItem={renderRoleItem}
           keyExtractor={item => item.id.toString()}
           contentContainerStyle={styles.listContent}
           refreshing={refreshing}
           onRefresh={onRefresh}
-          ListEmptyComponent={
+          removeClippedSubviews={true}
+          maxToRenderPerBatch={10}
+          windowSize={10}          ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Ionicons name="shield-outline" size={48} color="#aaaaaa" />
               <Text style={styles.emptyText}>No roles found</Text>
               <Text style={styles.emptySubText}>
                 {isOffline 
-                  ? "You're offline. Connect to the internet to manage roles."
-                  : "Create roles to manage user permissions."}
+                  ? "You're offline. Connect to the internet to view roles."
+                  : "Predefined roles will appear here once loaded."}
               </Text>
-              {!isOffline && (
-                <TouchableOpacity
-                  style={styles.emptyButton}
-                  onPress={() => openRoleModal()}
-                >
-                  <Text style={styles.emptyButtonText}>Create Role</Text>
-                </TouchableOpacity>
-              )}
             </View>
           }
         />
@@ -273,10 +285,9 @@ const RoleManagementScreen = ({ navigation }) => {
         onRequestClose={() => setRoleModalVisible(false)}
       >
         <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
+          <View style={styles.modalContent}>            <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>
-                {selectedRole ? 'Edit Role' : 'Create Role'}
+                Customize Role Permissions
               </Text>
               <TouchableOpacity onPress={() => setRoleModalVisible(false)}>
                 <Ionicons name="close" size={24} color="#555555" />
@@ -284,33 +295,22 @@ const RoleManagementScreen = ({ navigation }) => {
             </View>
             
             <ScrollView style={styles.modalBody}>
-              <Text style={styles.inputLabel}>Role Name *</Text>
-              <TextInput
-                style={styles.textInput}
-                value={roleForm.name}
-                onChangeText={(text) => setRoleForm({...roleForm, name: text})}
-                placeholder="Enter role name"
-              />
-              
-              <Text style={styles.inputLabel}>Description</Text>
-              <TextInput
-                style={[styles.textInput, styles.textArea]}
-                value={roleForm.description}
-                onChangeText={(text) => setRoleForm({...roleForm, description: text})}
-                placeholder="Enter role description"
-                multiline={true}
-                numberOfLines={3}
-              />
+              <View style={styles.roleInfo}>
+                <Text style={styles.roleNameDisplay}>{selectedRole?.name}</Text>
+                <Text style={styles.roleDescriptionDisplay}>
+                  {selectedRole?.description || 'Predefined role with customizable permissions'}
+                </Text>
+              </View>
               
               <Text style={[styles.inputLabel, styles.permissionsLabel]}>Permissions</Text>
               
               {availablePermissions.map(permission => (
                 <View key={permission.key} style={styles.permissionRow}>
-                  <Text style={styles.permissionLabel}>{permission.label}</Text>
-                  <Switch
+                  <Text style={styles.permissionLabel}>{permission.label}</Text>                  <Switch
                     value={roleForm.permissions.includes(permission.key)}
                     onValueChange={() => togglePermission(permission.key)}
                     trackColor={{ false: "#d1d1d1", true: "#007bff" }}
+                    disabled={isOffline}
                   />
                 </View>
               ))}
@@ -323,11 +323,10 @@ const RoleManagementScreen = ({ navigation }) => {
               >
                 <Text style={styles.buttonText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.saveButton]}
+              <TouchableOpacity                style={[styles.modalButton, styles.saveButton]}
                 onPress={handleSaveRole}
               >
-                <Text style={styles.buttonText}>Save</Text>
+                <Text style={styles.buttonText}>Save Changes</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -341,20 +340,35 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f8f9fa',
-  },
-  centerContainer: {
+  },  centerContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#f8f9fa',
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#666',
+  },
+  noPermissionText: {
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
+    paddingHorizontal: 20,
+  },  header: {
     padding: 16,
     backgroundColor: 'white',
     borderBottomWidth: 1,
     borderBottomColor: '#e1e1e1',
+  },
+  headerSubtitle: {
+    marginTop: 4,
+  },
+  subtitleText: {
+    fontSize: 14,
+    color: '#666',
+    fontStyle: 'italic',
   },
   headerTitle: {
     fontSize: 20,
@@ -397,9 +411,20 @@ const styles = StyleSheet.create({
   },
   roleActions: {
     flexDirection: 'row',
-  },
-  actionButton: {
+  },  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
     padding: 8,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#e1e1e1',
+  },
+  actionButtonText: {
+    marginLeft: 4,
+    fontSize: 12,
+    color: '#007bff',
+    fontWeight: '500',
   },
   roleDescription: {
     color: '#666666',
@@ -513,9 +538,27 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     color: '#333333',
-  },
-  modalBody: {
+  },  modalBody: {
     padding: 16,
+  },
+  roleInfo: {
+    backgroundColor: '#f8f9fa',
+    padding: 16,
+    borderRadius: 8,
+    marginBottom: 20,
+    borderLeftWidth: 4,
+    borderLeftColor: '#007bff',
+  },
+  roleNameDisplay: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 4,
+  },
+  roleDescriptionDisplay: {
+    fontSize: 14,
+    color: '#666',
+    lineHeight: 20,
   },
   inputLabel: {
     fontSize: 14,

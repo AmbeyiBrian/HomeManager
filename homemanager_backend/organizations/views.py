@@ -1,8 +1,9 @@
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.exceptions import ValidationError
-from .models import Organization, SubscriptionPlan, Subscription, SubscriptionPayment
+from rest_framework.exceptions import ValidationError, NotFound
+from django.shortcuts import get_object_or_404
+from .models import Organization, SubscriptionPlan, Subscription, SubscriptionPayment, BaseRole, OrganizationRoleCustomization
 from .membership_models import OrganizationRole, OrganizationMembership
 from .serializers import (
     OrganizationSerializer, 
@@ -10,7 +11,9 @@ from .serializers import (
     SubscriptionSerializer, 
     SubscriptionPaymentSerializer,
     OrganizationRoleSerializer,
-    OrganizationMembershipSerializer
+    OrganizationMembershipSerializer,
+    BaseRoleSerializer,
+    OrganizationRoleCustomizationSerializer
 )
 from .permissions import IsOrganizationOwnerOrAdmin
 
@@ -108,16 +111,28 @@ class OrganizationRoleViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         """
-        Return all roles without organization filtering.
-        Any authenticated user can access all roles.
+        Filter roles to only show those from the user's organization.
+        Only global superusers without an organization get all roles.
         """
-        return OrganizationRole.objects.all()
+        user = self.request.user
+        if user.is_superuser and not user.organization:
+            return OrganizationRole.objects.all()
+        
+        if user.organization:
+            return OrganizationRole.objects.filter(organization=user.organization)
+        return OrganizationRole.objects.none()
+    
     def perform_create(self, serializer):
-        """Create roles without organization restrictions"""
-        serializer.save()
-            
+        """Set organization when creating a new role"""
+        if not self.request.user.is_superuser and 'organization' not in serializer.validated_data:
+            serializer.save(organization=self.request.user.organization)
+        else:
+            serializer.save()
     def perform_update(self, serializer):
-        """Update roles without organization restrictions"""
+        """Ensure users can only update roles from their organization"""
+        obj = self.get_object()
+        if not self.request.user.is_superuser and obj.organization != self.request.user.organization:
+            raise ValidationError("You can only update roles for your organization")
         serializer.save()
 
 class OrganizationMembershipViewSet(viewsets.ModelViewSet):
@@ -202,3 +217,151 @@ class OrganizationMembershipViewSet(viewsets.ModelViewSet):
         membership = self.get_object()
         membership.send_invitation()
         return Response({'status': 'invitation sent'}, status=status.HTTP_200_OK)
+
+class BaseRoleViewSet(viewsets.ReadOnlyModelViewSet):
+    """ViewSet for viewing BaseRole instances (read-only)"""
+    queryset = BaseRole.objects.all()
+    serializer_class = BaseRoleSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        """Return all base roles - they are system-wide"""
+        return BaseRole.objects.all().order_by('name')
+
+class OrganizationRoleCustomizationViewSet(viewsets.ModelViewSet):
+    """ViewSet for managing organization-specific role customizations"""
+    queryset = OrganizationRoleCustomization.objects.all()
+    serializer_class = OrganizationRoleCustomizationSerializer
+    permission_classes = [permissions.IsAuthenticated, IsOrganizationOwnerOrAdmin]
+    
+    def get_queryset(self):
+        """Filter customizations to current user's organization"""
+        user = self.request.user
+        if user.is_superuser and not user.organization:
+            return OrganizationRoleCustomization.objects.all()
+        
+        if user.organization:
+            return OrganizationRoleCustomization.objects.filter(organization=user.organization)
+        return OrganizationRoleCustomization.objects.none()
+    
+    def perform_create(self, serializer):
+        """Ensure customization is created for the user's organization"""
+        if not self.request.user.is_superuser:
+            if not self.request.user.organization:
+                raise ValidationError("User has no associated organization")
+            serializer.save(organization=self.request.user.organization)
+        else:
+            serializer.save()
+    
+    def perform_update(self, serializer):
+        """Ensure users can only update their organization's customizations"""
+        obj = self.get_object()
+        if not self.request.user.is_superuser and obj.organization != self.request.user.organization:
+            raise ValidationError("You can only update your organization's role customizations")
+        serializer.save()
+    
+    @action(detail=False, methods=['get'])
+    def available_roles(self, request):
+        """Get all base roles with their current customization status"""
+        user = request.user
+        if not user.organization:
+            return Response({'error': 'User has no associated organization'}, status=400)
+        
+        base_roles = BaseRole.objects.all()
+        result = []
+        
+        for base_role in base_roles:
+            # Check if there's a customization for this role
+            try:
+                customization = OrganizationRoleCustomization.objects.get(
+                    organization=user.organization,
+                    base_role=base_role
+                )
+                customization_data = OrganizationRoleCustomizationSerializer(customization).data
+            except OrganizationRoleCustomization.DoesNotExist:
+                customization_data = None
+            
+            # Get the organization role instance
+            try:
+                org_role = OrganizationRole.objects.get(
+                    organization=user.organization,
+                    base_role=base_role
+                )
+                role_data = OrganizationRoleSerializer(org_role).data
+            except OrganizationRole.DoesNotExist:
+                # Create organization role if it doesn't exist
+                org_role = OrganizationRole.objects.create(
+                    organization=user.organization,
+                    base_role=base_role
+                )
+                role_data = OrganizationRoleSerializer(org_role).data
+            
+            result.append({
+                'base_role': BaseRoleSerializer(base_role).data,
+                'organization_role': role_data,
+                'customization': customization_data,
+                'is_customized': customization_data is not None
+            })
+        
+        return Response(result)
+    
+    @action(detail=False, methods=['post'])
+    def customize_role(self, request):
+        """Create or update a role customization"""
+        user = request.user
+        if not user.organization:
+            return Response({'error': 'User has no associated organization'}, status=400)
+        
+        base_role_id = request.data.get('base_role')
+        if not base_role_id:
+            return Response({'error': 'base_role is required'}, status=400)
+        
+        try:
+            base_role = BaseRole.objects.get(id=base_role_id)
+        except BaseRole.DoesNotExist:
+            return Response({'error': 'Base role not found'}, status=404)
+        
+        # Get or create customization
+        customization, created = OrganizationRoleCustomization.objects.get_or_create(
+            organization=user.organization,
+            base_role=base_role
+        )
+        
+        # Update with provided permissions
+        serializer = OrganizationRoleCustomizationSerializer(
+            customization, 
+            data=request.data, 
+            partial=True
+        )
+        
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=201 if created else 200)
+        
+        return Response(serializer.errors, status=400)
+    
+    @action(detail=False, methods=['delete'])
+    def reset_role(self, request):
+        """Reset a role to its default permissions by deleting customization"""
+        user = request.user
+        if not user.organization:
+            return Response({'error': 'User has no associated organization'}, status=400)
+        
+        base_role_id = request.data.get('base_role') or request.query_params.get('base_role')
+        if not base_role_id:
+            return Response({'error': 'base_role is required'}, status=400)
+        
+        try:
+            base_role = BaseRole.objects.get(id=base_role_id)
+        except BaseRole.DoesNotExist:
+            return Response({'error': 'Base role not found'}, status=404)
+        
+        try:
+            customization = OrganizationRoleCustomization.objects.get(
+                organization=user.organization,
+                base_role=base_role
+            )
+            customization.delete()
+            return Response({'message': 'Role permissions reset to defaults'}, status=200)
+        except OrganizationRoleCustomization.DoesNotExist:
+            return Response({'message': 'Role was already using default permissions'}, status=200)

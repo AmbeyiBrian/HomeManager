@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Organization, SubscriptionPlan, Subscription, SubscriptionPayment
+from .models import Organization, SubscriptionPlan, Subscription, SubscriptionPayment, BaseRole, OrganizationRoleCustomization
 from .membership_models import OrganizationRole, OrganizationMembership
 
 class OrganizationSerializer(serializers.ModelSerializer):
@@ -58,13 +58,54 @@ class SubscriptionPaymentSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at']
 
 class OrganizationRoleSerializer(serializers.ModelSerializer):
-    """Serializer for the OrganizationRole model"""
+    """Serializer for the OrganizationRole model with computed permissions"""
+    # Include computed permission fields as read-only
+    name = serializers.CharField(read_only=True)
+    slug = serializers.CharField(read_only=True)
+    role_type = serializers.CharField(read_only=True)
+    description = serializers.CharField(read_only=True)
+    can_manage_users = serializers.BooleanField(read_only=True)
+    can_manage_billing = serializers.BooleanField(read_only=True)
+    can_manage_properties = serializers.BooleanField(read_only=True)
+    can_manage_tenants = serializers.BooleanField(read_only=True)
+    can_view_reports = serializers.BooleanField(read_only=True)
+    can_manage_roles = serializers.BooleanField(read_only=True)
+    can_manage_system_settings = serializers.BooleanField(read_only=True)
+    can_view_dashboard = serializers.BooleanField(read_only=True)
+    can_manage_tickets = serializers.BooleanField(read_only=True)
+    manage_notices = serializers.BooleanField(read_only=True)
+    
+    # Additional fields
+    is_customized = serializers.SerializerMethodField()
+    base_role_name = serializers.CharField(source='base_role.name', read_only=True)
+    base_role_slug = serializers.CharField(source='base_role.slug', read_only=True)
+    
     class Meta:
         model = OrganizationRole
-        fields = ['id', 'name', 'slug', 'role_type', 'description',
-                 'can_manage_users', 'can_manage_billing', 'can_manage_properties',
-                 'can_manage_tenants', 'can_view_reports']
-        read_only_fields = ['id']
+        fields = [
+            'id', 'organization', 'base_role', 'base_role_name', 'base_role_slug',
+            'name', 'slug', 'role_type', 'description',
+            'can_manage_users', 'can_manage_billing', 'can_manage_properties',
+            'can_manage_tenants', 'can_view_reports', 'can_manage_roles',
+            'can_manage_system_settings', 'can_view_dashboard', 
+            'can_manage_tickets', 'manage_notices', 'is_customized',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = [
+            'id', 'name', 'slug', 'role_type', 'description',
+            'can_manage_users', 'can_manage_billing', 'can_manage_properties',
+            'can_manage_tenants', 'can_view_reports', 'can_manage_roles',
+            'can_manage_system_settings', 'can_view_dashboard', 
+            'can_manage_tickets', 'manage_notices', 'is_customized',
+            'created_at', 'updated_at'
+        ]
+    
+    def get_is_customized(self, obj):
+        """Check if this role has any customizations"""
+        return OrganizationRoleCustomization.objects.filter(
+            organization=obj.organization,
+            base_role=obj.base_role
+        ).exists()
 
 class OrganizationMembershipSerializer(serializers.ModelSerializer):
     """Serializer for the OrganizationMembership model"""
@@ -87,3 +128,53 @@ class OrganizationMembershipSerializer(serializers.ModelSerializer):
             'first_name': obj.user.first_name,
             'last_name': obj.user.last_name
         }
+
+class BaseRoleSerializer(serializers.ModelSerializer):
+    """Serializer for the BaseRole model"""
+    class Meta:
+        model = BaseRole
+        fields = [
+            'id', 'name', 'slug', 'description', 'role_type', 'is_system_role',
+            'default_can_manage_users', 'default_can_manage_billing', 'default_can_manage_properties',
+            'default_can_manage_tenants', 'default_can_view_reports', 'default_can_manage_roles',
+            'default_can_manage_system_settings', 'default_can_view_dashboard', 
+            'default_can_manage_tickets', 'default_manage_notices'
+        ]
+        read_only_fields = ['id', 'slug', 'is_system_role']
+
+class OrganizationRoleCustomizationSerializer(serializers.ModelSerializer):
+    """Serializer for the OrganizationRoleCustomization model"""
+    base_role_name = serializers.CharField(source='base_role.name', read_only=True)
+    base_role_description = serializers.CharField(source='base_role.description', read_only=True)
+    base_role_slug = serializers.CharField(source='base_role.slug', read_only=True)
+    
+    class Meta:
+        model = OrganizationRoleCustomization
+        fields = [
+            'id', 'organization', 'base_role', 'base_role_name', 'base_role_description', 'base_role_slug',
+            'can_manage_users', 'can_manage_billing', 'can_manage_properties',
+            'can_manage_tenants', 'can_view_reports', 'can_manage_roles',
+            'can_manage_system_settings', 'can_view_dashboard', 
+            'can_manage_tickets', 'manage_notices', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'organization', 'created_at', 'updated_at']
+    
+    def validate(self, data):
+        """Validate that at least one permission is being customized"""
+        permission_fields = [
+            'can_manage_users', 'can_manage_billing', 'can_manage_properties',
+            'can_manage_tenants', 'can_view_reports', 'can_manage_roles',
+            'can_manage_system_settings', 'can_view_dashboard', 
+            'can_manage_tickets', 'manage_notices'
+        ]
+        
+        # Check if any permission field has a non-None value
+        has_customization = any(data.get(field) is not None for field in permission_fields)
+        
+        if not has_customization:
+            raise serializers.ValidationError(
+                "At least one permission must be customized. "
+                "To reset to defaults, delete the customization instead."
+            )
+        
+        return data

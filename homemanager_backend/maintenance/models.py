@@ -16,6 +16,13 @@ class ServiceProvider(models.Model):
     ]
     
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='service_providers')
+    organization = models.ForeignKey(
+        'organizations.Organization', 
+        on_delete=models.CASCADE,
+        related_name='service_providers',
+        null=True,
+        blank=True
+    )
     name = models.CharField(max_length=200)
     provider_type = models.CharField(max_length=20, choices=PROVIDER_TYPES)
     phone_number = models.CharField(max_length=15)

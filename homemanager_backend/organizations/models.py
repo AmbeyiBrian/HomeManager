@@ -286,3 +286,95 @@ class SubscriptionPayment(OrganizationModel):
     
     def __str__(self):
         return f"{self.subscription.organization.name} - {self.amount} {self.currency}"
+
+
+class BaseRole(models.Model):
+    """
+    System-defined base roles that serve as templates for organization roles.
+    These are predefined roles like Owner, Admin, Manager, Member, Guest that
+    organizations can customize per their needs.
+    """
+    ROLE_TYPE_CHOICES = [
+        ('owner', 'Owner'),
+        ('admin', 'Administrator'),
+        ('manager', 'Manager'),
+        ('member', 'Member'),
+        ('guest', 'Guest'),
+    ]
+    
+    name = models.CharField(max_length=50, unique=True)
+    slug = models.SlugField(unique=True)
+    description = models.TextField()
+    role_type = models.CharField(max_length=20, choices=ROLE_TYPE_CHOICES)
+    is_system_role = models.BooleanField(default=True)
+    
+    # Default permissions (can be overridden per organization)
+    default_can_manage_users = models.BooleanField(default=False)
+    default_can_manage_billing = models.BooleanField(default=False)
+    default_can_manage_properties = models.BooleanField(default=False)
+    default_can_manage_tenants = models.BooleanField(default=False)
+    default_can_view_reports = models.BooleanField(default=False)
+    default_can_manage_roles = models.BooleanField(default=False)
+    default_can_manage_system_settings = models.BooleanField(default=False)
+    default_can_view_dashboard = models.BooleanField(default=False)
+    default_can_manage_tickets = models.BooleanField(default=False)
+    default_manage_notices = models.BooleanField(default=False)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['name']
+        verbose_name = "Base Role"
+        verbose_name_plural = "Base Roles"
+    
+    def __str__(self):
+        return self.name
+    
+    def save(self, *args, **kwargs):
+        """Auto-generate slug from name if not provided"""
+        if not self.slug:
+            self.slug = slugify(self.name)
+        super().save(*args, **kwargs)
+
+
+class OrganizationRoleCustomization(models.Model):
+    """
+    Per-organization customizations for base roles.
+    This allows organizations to override default permissions for each base role.
+    """
+    organization = models.ForeignKey(
+        'Organization',
+        on_delete=models.CASCADE,
+        related_name='role_customizations'
+    )
+    base_role = models.ForeignKey(
+        BaseRole,
+        on_delete=models.CASCADE,
+        related_name='customizations'
+    )
+    
+    # Custom permissions (override base role defaults)
+    # Using null=True, blank=True to distinguish between explicitly set False and unset
+    can_manage_users = models.BooleanField(null=True, blank=True)
+    can_manage_billing = models.BooleanField(null=True, blank=True)
+    can_manage_properties = models.BooleanField(null=True, blank=True)
+    can_manage_tenants = models.BooleanField(null=True, blank=True)
+    can_view_reports = models.BooleanField(null=True, blank=True)
+    can_manage_roles = models.BooleanField(null=True, blank=True)
+    can_manage_system_settings = models.BooleanField(null=True, blank=True)
+    can_view_dashboard = models.BooleanField(null=True, blank=True)
+    can_manage_tickets = models.BooleanField(null=True, blank=True)
+    manage_notices = models.BooleanField(null=True, blank=True)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        unique_together = ['organization', 'base_role']
+        ordering = ['organization', 'base_role']
+        verbose_name = "Organization Role Customization"
+        verbose_name_plural = "Organization Role Customizations"
+    
+    def __str__(self):
+        return f"{self.organization.name} - {self.base_role.name} customization"

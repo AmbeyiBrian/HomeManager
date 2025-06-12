@@ -19,7 +19,11 @@ class ServiceProviderViewSet(viewsets.ModelViewSet):
         
         # Filter by provider_type if provided
         provider_type = self.request.query_params.get('provider_type', None)
-        queryset = ServiceProvider.objects.filter(owner=user)
+        
+        if user.organization:
+            queryset = ServiceProvider.objects.filter(organization=user.organization)
+        else:
+            return ServiceProvider.objects.none()
         
         if provider_type:
             queryset = queryset.filter(provider_type=provider_type)
@@ -27,8 +31,11 @@ class ServiceProviderViewSet(viewsets.ModelViewSet):
         return queryset
     
     def perform_create(self, serializer):
-        """Set owner to current user when creating a service provider"""
-        serializer.save(owner=self.request.user)
+        """Set owner and organization when creating a service provider"""
+        serializer.save(
+            owner=self.request.user,
+            organization=self.request.user.organization
+        )
 
 class TicketViewSet(viewsets.ModelViewSet):
     """ViewSet for viewing and editing Ticket instances"""

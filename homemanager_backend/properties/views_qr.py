@@ -34,11 +34,17 @@ def bulk_qr_codes(request):
             {"error": "Invalid unit ID format. Use integers separated by commas."},
             status=status.HTTP_400_BAD_REQUEST
         )
+      # Get units that user has access to
+    user = request.user
     
-    # Get units that user has access to
-    user_properties = Property.objects.filter(
-        organization__in=request.user.organizations.all()
-    ).values_list('id', flat=True)
+    if user.is_superuser:
+        user_properties = Property.objects.all().values_list('id', flat=True)
+    elif user.organization:
+        user_properties = Property.objects.filter(
+            organization=user.organization
+        ).values_list('id', flat=True)
+    else:
+        user_properties = []
     
     accessible_units = Unit.objects.filter(
         property_id__in=user_properties,
@@ -97,9 +103,11 @@ def property_qr_codes(request, pk):
             {"error": "Property not found"},
             status=status.HTTP_404_NOT_FOUND
         )
-    
-    # Check if user has access to this property
-    if property.organization not in request.user.organizations.all():
+      # Check if user has access to this property
+    if request.user.is_superuser:
+        # Superusers have access to all properties
+        pass
+    elif not request.user.organization or property.organization != request.user.organization:
         return Response(
             {"error": "You don't have access to this property"},
             status=status.HTTP_403_FORBIDDEN

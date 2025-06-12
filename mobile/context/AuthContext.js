@@ -1179,20 +1179,46 @@ export const AuthProvider = ({ children }) => {
       };
     }
   };
-  
-  // Assign a role to a user
+    // Assign a role to a user
   const assignRole = async (userId, roleId) => {
     try {
       if (authState.isOffline) {
         return await queueOfflineAction('assignRole', { userId, roleId });
       }
 
-      const response = await axios.post(`${API_ORGANIZATIONS}/memberships/`, {
-        user: userId,
-        role: roleId
-      });
+      // First, check if the user already has a membership in the current organization
+      const existingMembership = authState.memberships.find(membership => 
+        (membership.user === userId || 
+         (membership.user_details && membership.user_details.id === userId) ||
+         (typeof membership.user === 'object' && membership.user.id === userId))
+      );
+
+      let response;
       
-      // Refresh memberships list
+      if (existingMembership) {
+        // User already has a membership, update their role using PATCH
+        console.log('🔄 Updating existing membership:', existingMembership.id, 'with new role:', roleId);
+        response = await axios.patch(`${API_ORGANIZATIONS}/memberships/${existingMembership.id}/`, {
+          role: roleId
+        });
+      } else {
+        // User doesn't have a membership, create a new one with POST
+        // Include organization field - use current organization from auth state
+        const organizationId = authState.currentOrganization?.id || authState.user?.organization?.id;
+        
+        if (!organizationId) {
+          throw new Error('No organization found. Cannot assign role.');
+        }
+        
+        console.log('🆕 Creating new membership for user:', userId, 'in organization:', organizationId, 'with role:', roleId);
+        response = await axios.post(`${API_ORGANIZATIONS}/memberships/`, {
+          user: userId,
+          role: roleId,
+          organization: organizationId
+        });
+      }
+      
+      // Refresh memberships list to reflect the changes
       await fetchMemberships(true);
       
       return {
@@ -3404,11 +3430,11 @@ export const AuthProvider = ({ children }) => {
       fetchMyOrganization,
       fetchProperties,
       fetchPropertyDetails,
-      fetchRoles,
-      fetchMemberships,
+      fetchRoles,      fetchMemberships,
       createOrUpdateRole,      deleteRole,
       assignRole,
       hasPermission,
+      getRolePermissions,
       // New organization functions
       createOrganization,
       updateOrganization,

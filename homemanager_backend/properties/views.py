@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from django.db import models
 from .models import Property, PropertyImage, Unit, QRCode, MpesaConfig, PropertyMpesaConfig
+from users.models import User
 from .serializers import (
     PropertySerializer, PropertyDetailSerializer, PropertyImageSerializer,
     UnitSerializer, QRCodeSerializer, MpesaConfigSerializer, PropertyMpesaConfigSerializer
@@ -28,17 +29,75 @@ class PropertyViewSet(viewsets.ModelViewSet):
         """
         user = self.request.user
         if user.is_superuser:
-            return Property.objects.all()
+            queryset = Property.objects.all()
+            print(f"DEBUG: Returning all {queryset.count()} properties for superuser")
+            return queryset
         if user.organization:
-            return Property.objects.filter(organization=user.organization)
-        return Property.objects.none()
+            queryset = Property.objects.filter(organization=user.organization)
+            print(f"DEBUG: Filtered properties for organization '{user.organization.name}': {queryset.count()} properties")
+            return queryset
+        print("DEBUG: User has no organization, returning empty queryset")
+        return Property.objects.none()    
     
     def perform_create(self, serializer):
         """Set owner and organization when creating a new property"""
+        user = self.request.user
+        
+        # Ensure the user has an organization
+        if not user.organization:
+            raise serializers.ValidationError(
+                "You must belong to an organization to create a property"
+            )
+            
+        # Set both owner and organization consistently
         serializer.save(
-            owner=self.request.user,
-            organization=self.request.user.organization
+            owner=user,
+            organization=user.organization
         )
+        
+        print(f"Created property: {serializer.instance.name}")
+        print(f"Owner: {serializer.instance.owner.username}")
+        print(f"Organization: {serializer.instance.organization.name}")
+    
+    def perform_update(self, serializer):
+        """
+        Ensure property ownership stays consistent with organization
+        when organization is changed
+        """
+        instance = self.get_object()
+        data = serializer.validated_data
+        
+        # If organization is being changed, update the owner
+        if 'organization' in data and data['organization'] != instance.organization:
+            new_org = data['organization']
+            user = self.request.user
+            
+            # Only allow organization admins or superusers to change organization
+            if not (user.is_superuser or user.is_organization_admin):
+                raise serializers.ValidationError(
+                    "Only organization admins or superusers can change a property's organization"
+                )
+                
+            # Find a suitable owner from the new organization (admin preferred)
+            new_owner = User.objects.filter(
+                organization=new_org,
+                is_organization_admin=True
+            ).first()
+            
+            if not new_owner:
+                new_owner = User.objects.filter(organization=new_org).first()
+                
+            if not new_owner:
+                raise serializers.ValidationError(
+                    f"No users found in the {new_org.name} organization to assign as owner"
+                )
+                
+            # Update the owner to someone from the new organization
+            data['owner'] = new_owner
+            print(f"Changing property organization from {instance.organization.name} to {new_org.name}")
+            print(f"Changing property owner from {instance.owner.username} to {new_owner.username}")
+            
+        serializer.save()
     
     @action(detail=True, methods=['get'])
     def rent_stats(self, request, pk=None):
