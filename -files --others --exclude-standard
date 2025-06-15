@@ -1,0 +1,37 @@
+warning: in the working copy of 'docs/mobile/MOBILE_README.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'mobile/package-lock.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'mobile/package.json', LF will be replaced by CRLF the next time Git touches it
+ docs/api/API_ENDPOINTS_DOCUMENTATION.md            |    50 [32m+[m[31m-[m
+ docs/mobile/MOBILE_README.md                       |    10 [32m+[m[31m-[m
+ .../homemanager_backend/settings.py                |     1 [32m+[m
+ homemanager_backend/notices/models.py              |     2 [32m+[m
+ homemanager_backend/notices/serializers.py         |    29 [32m+[m[31m-[m
+ homemanager_backend/notices/views.py               |     8 [32m+[m[31m-[m
+ .../commands/migrate_organization_roles.py         |    99 [32m+[m
+ homemanager_backend/properties/models.py           |     2 [32m+[m
+ homemanager_backend/properties/serializers.py      |     2 [32m+[m[31m-[m
+ homemanager_backend/properties/views.py            |   181 [32m+[m
+ homemanager_backend/tenants/serializers.py         |     7 [32m+[m[31m-[m
+ homemanager_backend/tenants/views.py               |    92 [32m+[m
+ .../management/commands/generate_dummy_data.py     |    15 [32m+[m[31m-[m
+ mobile/App.js                                      |    37 [32m+[m[31m-[m
+ mobile/components/DashboardCard.js                 |    30 [32m+[m[31m-[m
+ mobile/context/AuthContext.js                      |  3523 [32m+[m[31m----[m
+ mobile/package-lock.json                           | 15245 [32m+++++++++++[m[31m--------[m
+ mobile/package.json                                |     1 [32m+[m
+ mobile/screens/AddPaymentScreen.js                 |   179 [32m+[m[31m-[m
+ mobile/screens/AddPropertyScreen.js                |    17 [32m+[m[31m-[m
+ mobile/screens/AddTenantScreen.js                  |    66 [32m+[m[31m-[m
+ mobile/screens/AddUnitScreen.js                    |    61 [32m+[m[31m-[m
+ mobile/screens/CreateNoticeScreen.js               |   154 [32m+[m[31m-[m
+ mobile/screens/DashboardScreen.js                  |   115 [32m+[m[31m-[m
+ mobile/screens/EditPropertyScreen.js               |    17 [32m+[m[31m-[m
+ mobile/screens/NoticeDetailScreen.js               |   229 [32m+[m[31m-[m
+ mobile/screens/NoticesScreen.js                    |   124 [32m+[m[31m-[m
+ mobile/screens/PaymentsScreen.js                   |    59 [32m+[m[31m-[m
+ mobile/screens/PropertyDetailScreen.js             |     2 [32m+[m[31m-[m
+ mobile/screens/RoleManagementScreen.js             |    56 [32m+[m[31m-[m
+ mobile/screens/TenantsScreen.js                    |    13 [32m+[m[31m-[m
+ mobile/screens/TicketDetailScreen.js               |    14 [31m-[m
+ mobile/screens/TicketsScreen.js                    |    15 [32m+[m[31m-[m
+ 33 files changed, 9940 insertions(+), 10515 deletions(-)
