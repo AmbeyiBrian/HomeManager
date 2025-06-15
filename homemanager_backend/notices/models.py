@@ -1,4 +1,5 @@
 from django.db import models
+from django.conf import settings
 from properties.models import Property
 from tenants.models import Tenant
 
@@ -17,6 +18,7 @@ class Notice(models.Model):
         ('utility', 'Utility & Service'),
     ]
     property = models.ForeignKey(Property, on_delete=models.CASCADE, related_name='notices')
+    creator = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, related_name='created_notices', null=True)
     title = models.CharField(max_length=200)
     content = models.TextField()
     notice_type = models.CharField(max_length=20, choices=NOTICE_TYPE_CHOICES, default='general')

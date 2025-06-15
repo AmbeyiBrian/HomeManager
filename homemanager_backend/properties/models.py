@@ -51,6 +51,8 @@ class Unit(models.Model):
     bedrooms = models.PositiveSmallIntegerField(blank=True, null=True)
     bathrooms = models.DecimalField(max_digits=3, decimal_places=1, blank=True, null=True)
     monthly_rent = models.DecimalField(max_digits=10, decimal_places=2)
+    security_deposit = models.DecimalField(max_digits=10, decimal_places=2, default=20000, 
+                                          help_text="Default security deposit amount for this unit")
     is_occupied = models.BooleanField(default=False)
     description = models.TextField(blank=True, null=True)
     access_code = models.CharField(max_length=20, blank=True, null=True, unique=True, 

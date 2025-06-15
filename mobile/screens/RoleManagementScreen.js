@@ -37,9 +37,8 @@ const RoleManagementScreen = ({ navigation }) => {
     name: '',
     description: '',
     permissions: []
-  });  // Available permissions - memoized to prevent re-renders
-  const availablePermissions = useMemo(() => [
-    { key: 'can_manage_users', label: 'Manage Users' },
+  });  // Available permissions - memoized to prevent re-renders  
+  const availablePermissions = useMemo(() => [    { key: 'can_manage_users', label: 'Manage Users' },
     { key: 'can_manage_billing', label: 'Manage Billing' },
     { key: 'can_manage_properties', label: 'Manage Properties' },
     { key: 'can_manage_tenants', label: 'Manage Tenants' },
@@ -50,15 +49,26 @@ const RoleManagementScreen = ({ navigation }) => {
     { key: 'can_manage_tickets', label: 'Manage Tickets' },
     { key: 'manage_notices', label: 'Manage Notices' }
   ], []);
-
   // Memoized permission check
   const canManageRoles = useMemo(() => {
+    // Only check permissions if roles are loaded
+    if (rolesLoading || roles.length === 0) {
+      return null; // null means "we don't know yet"
+    }
     return hasPermission('can_manage_roles');
-  }, [hasPermission]);
-
-  // Check if user has permission to manage roles - only run once
+  }, [hasPermission, rolesLoading, roles.length]);
+  // First, always fetch roles when component mounts
   useEffect(() => {
-    if (canManageRoles === false) {
+    if (roles.length === 0 && !rolesLoading) {
+      console.log('💥 Roles tab activated but no roles data found, fetching roles...');
+      fetchRoles();
+    }
+  }, []); // Empty dependency array to run only once on mount
+  
+  // Wait until roles are loaded before checking permissions
+  useEffect(() => {
+    // Only check permissions after roles are done loading
+    if (!rolesLoading && roles.length > 0 && canManageRoles === false) {
       Alert.alert(
         'Permission Denied',
         'You do not have permission to manage roles.',
@@ -67,17 +77,9 @@ const RoleManagementScreen = ({ navigation }) => {
         ]
       );
     }
-  }, [canManageRoles, navigation]);
-  // Fetch roles only once when component mounts and user has permission
-  useEffect(() => {
-    if (canManageRoles && roles.length === 0 && !rolesLoading) {
-      console.log('💥 Roles tab activated but no roles data found, fetching roles...');
-      fetchRoles();
-    }
-  }, [canManageRoles, roles.length, rolesLoading]); // Remove fetchRoles from dependencies to prevent loop
-
+  }, [canManageRoles, navigation, roles.length, rolesLoading]);
   const onRefresh = useCallback(async () => {
-    if (!canManageRoles || isOffline) return;
+    if (canManageRoles === false || isOffline) return;
     
     setRefreshing(true);
     try {
@@ -212,8 +214,7 @@ const RoleManagementScreen = ({ navigation }) => {
         </View>
       </View>
     </View>
-  ), [openRoleModal, handleDeleteRole, getRolePermissions, availablePermissions, isOffline]);
-  // Don't show loading if we're just refreshing and already have data
+  ), [openRoleModal, handleDeleteRole, getRolePermissions, availablePermissions, isOffline]);  // Don't show loading if we're just refreshing and already have data
   if (rolesLoading && !refreshing && (!roles || roles.length === 0)) {
     return (
       <View style={styles.centerContainer}>
@@ -222,9 +223,18 @@ const RoleManagementScreen = ({ navigation }) => {
       </View>
     );
   }
-
-  // Don't render if user doesn't have permission
-  if (canManageRoles === false) {
+  
+  // Show loading while we're checking permissions
+  if (roles.length === 0) {
+    return (
+      <View style={styles.centerContainer}>
+        <ActivityIndicator size="large" color="#007bff" />
+        <Text style={styles.loadingText}>Checking permissions...</Text>
+      </View>
+    );
+  }
+  // Only show permission error if roles are loaded and user doesn't have permission
+  if (!rolesLoading && roles.length > 0 && canManageRoles === false) {
     return (
       <View style={styles.centerContainer}>
         <Text style={styles.noPermissionText}>You don't have permission to manage roles.</Text>

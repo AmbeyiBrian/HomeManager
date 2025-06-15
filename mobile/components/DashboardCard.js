@@ -12,24 +12,27 @@ const DashboardCard = ({
   onPress,
   loading = false 
 }) => {
-
   const getTrendIcon = () => {
-    if (!trend) return null;
-    if (trend > 0) return 'trending-up';
-    if (trend < 0) return 'trending-down';
+    if (trend === undefined || trend === null) return null;
+    const numTrend = Number(trend);
+    if (isNaN(numTrend)) return null;
+    if (numTrend > 0) return 'trending-up';
+    if (numTrend < 0) return 'trending-down';
     return 'remove';
   };
-
   const getTrendColor = () => {
-    if (!trend) return '#666';
-    if (trend > 0) return '#4CAF50';
-    if (trend < 0) return '#F44336';
+    if (trend === undefined || trend === null) return '#666';
+    const numTrend = Number(trend);
+    if (isNaN(numTrend)) return '#666';
+    if (numTrend > 0) return '#4CAF50';
+    if (numTrend < 0) return '#F44336';
     return '#666';
   };
+  
   const formatTrend = () => {
-    if (!trend || isNaN(trend)) return '';
+    if (trend === undefined || trend === null || isNaN(Number(trend))) return '';
     const absValue = Math.abs(Number(trend));
-    const sign = trend > 0 ? '+' : '';
+    const sign = Number(trend) > 0 ? '+' : '';
     return `${sign}${absValue}%`;
   };
 
@@ -48,13 +51,14 @@ const DashboardCard = ({
               <Text style={styles.loading}>Loading...</Text>
             ) : (
               <>
-                <Text style={[styles.value, { color }]}>{String(value || '0')}</Text>
+                <Text style={[styles.value, { color }]}>
+                  {value !== undefined && value !== null ? String(value) : '0'}
+                </Text>
                 {subtitle && <Text style={styles.subtitle}>{String(subtitle)}</Text>}
               </>
             )}
           </View>
-        </View>
-        {trend !== undefined && !loading && (
+        </View>        {trend !== undefined && trend !== null && !loading && !isNaN(Number(trend)) && (
           <View style={styles.trendWrapper}>
             <View style={styles.trendContainer}>
               {trendIconName ? (

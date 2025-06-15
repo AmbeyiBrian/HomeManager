@@ -290,11 +290,20 @@ const AddPropertyScreen = ({ navigation }) => {
               onPress: () => navigation.goBack()
             }]
           );
+        }      } else {
+        let errorMessage = '';
+        
+        if (typeof response.error === 'object') {
+          // Check for specific organization error
+          if (response.error.detail && response.error.detail.includes('organization')) {
+            errorMessage = 'You must belong to an organization to create a property. Please contact your administrator.';
+          } else {
+            errorMessage = JSON.stringify(response.error);
+          }
+        } else {
+          errorMessage = response.error;
         }
-      } else {
-        const errorMessage = typeof response.error === 'object'
-          ? JSON.stringify(response.error)
-          : response.error;
+        
         Alert.alert('Error', `Failed to add property: ${errorMessage}`);
       }
       

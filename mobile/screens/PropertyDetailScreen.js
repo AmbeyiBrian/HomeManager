@@ -32,7 +32,7 @@ const PropertyDetailScreen = ({ route, navigation }) => {
   // Debug logging to help identify issues
   console.log('PropertyDetailScreen - route.params:', route?.params);
   console.log('PropertyDetailScreen - property:', property);
-    const { 
+  const { 
     fetchPropertyDetails,
     clearPropertyDetails,
     currentPropertyUnits,

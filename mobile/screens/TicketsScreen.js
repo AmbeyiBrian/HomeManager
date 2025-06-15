@@ -54,6 +54,7 @@ const TicketsScreen = ({ navigation }) => {
   const [loadingMore, setLoadingMore] = useState(false);
   const [page, setPage] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
+  const [nextPageUrl, setNextPageUrl] = useState(null);
   const [filter, setFilter] = useState('all'); // all, new, assigned, in_progress, resolved
   const [propertyFilter, setPropertyFilter] = useState('all'); // 'all' or property ID
   const PAGE_SIZE = 10;
@@ -140,14 +141,22 @@ const TicketsScreen = ({ navigation }) => {
       if (resetPage) {
         setLoading(true);
         setPage(1);
+        setNextPageUrl(null);
       }
       
       // Use centralized API method from AuthContext
       const statusFilter = filter !== 'all' ? filter : null;
       const propertyId = propertyFilter !== 'all' ? propertyFilter : null;
       
-      // Pass both filters to the API
-      const response = await fetchAllTickets(true, resetPage ? 1 : page, PAGE_SIZE, statusFilter, propertyId);
+      // Pass both filters and nextPageUrl to the API
+      const response = await fetchAllTickets(
+        true,
+        resetPage ? 1 : page,
+        PAGE_SIZE,
+        statusFilter,
+        propertyId,
+        resetPage ? null : nextPageUrl
+      );
       
       if (response.success) {
         if (resetPage) {
@@ -159,6 +168,8 @@ const TicketsScreen = ({ navigation }) => {
         
         // Update pagination state
         setHasNextPage(response.pagination?.hasNext || false);
+        setNextPageUrl(response.pagination?.nextPageUrl || null);
+        
         if (!resetPage) {
           setPage(prevPage => prevPage + 1);
         }

@@ -14,7 +14,6 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { useApi } from '../hooks/useApi';
-import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker from '@react-native-community/datetimepicker';
 
@@ -44,7 +43,7 @@ const AddPaymentScreen = ({ navigation }) => {
   const [showEndDatePicker, setShowEndDatePicker] = useState(false);
   
   // Auth and API context
-  const { authState, isOffline } = useAuth();
+  const { authState, isOffline, fetchProperties, fetchPropertyUnits, fetchUnitTenants, createPayment } = useAuth();
   const { endpoints } = useApi();
   
   // Load properties when component mounts
@@ -76,42 +75,17 @@ const AddPaymentScreen = ({ navigation }) => {
     setPropertyLoading(true);
     
     try {
-      // Check offline cache first
-      if (isOffline) {
-        const cachedProperties = await AsyncStorage.getItem('cached_properties');
-        if (cachedProperties) {
-          setProperties(JSON.parse(cachedProperties));
-        }
-        setPropertyLoading(false);
-        return;
+      // Use context method instead of direct axios call
+      const response = await fetchProperties();
+      
+      if (response.success) {
+        setProperties(response.data);
+      } else {
+        console.error('Error fetching properties:', response.error);
       }
-      
-      // Fetch properties from API
-      const response = await axios.get(endpoints.properties, {
-        headers: { 'Authorization': `Token ${authState.token}` }
-      });
-      
-      if (response.data && response.data.results) {
-        const propertiesData = response.data.results;
-        setProperties(propertiesData);
-        // Cache properties for offline use
-        await AsyncStorage.setItem('cached_properties', JSON.stringify(propertiesData));
-      }
-      
-      setPropertyLoading(false);
     } catch (error) {
       console.error('Error loading properties:', error);
-      
-      // Try to use cached data
-      try {
-        const cachedProperties = await AsyncStorage.getItem('cached_properties');
-        if (cachedProperties) {
-          setProperties(JSON.parse(cachedProperties));
-        }
-      } catch (cacheError) {
-        console.error('Error loading cached properties:', cacheError);
-      }
-      
+    } finally {
       setPropertyLoading(false);
     }
   };
@@ -121,42 +95,17 @@ const AddPaymentScreen = ({ navigation }) => {
     setUnits([]);
     
     try {
-      // Check offline cache first
-      if (isOffline) {
-        const cachedUnits = await AsyncStorage.getItem(`cached_units_${propertyId}`);
-        if (cachedUnits) {
-          setUnits(JSON.parse(cachedUnits));
-        }
-        setUnitLoading(false);
-        return;
+      // Use context method instead of direct axios call
+      const response = await fetchPropertyUnits(propertyId);
+      
+      if (response.success) {
+        setUnits(response.data);
+      } else {
+        console.error('Error fetching units:', response.error);
       }
-      
-      // Fetch units for the selected property
-      const response = await axios.get(endpoints.propertyUnits(propertyId), {
-        headers: { 'Authorization': `Token ${authState.token}` }
-      });
-      
-      if (response.data && response.data.results) {
-        const unitsData = response.data.results;
-        setUnits(unitsData);
-        // Cache units for this property
-        await AsyncStorage.setItem(`cached_units_${propertyId}`, JSON.stringify(unitsData));
-      }
-      
-      setUnitLoading(false);
     } catch (error) {
       console.error('Error loading units:', error);
-      
-      // Try to use cached data
-      try {
-        const cachedUnits = await AsyncStorage.getItem(`cached_units_${propertyId}`);
-        if (cachedUnits) {
-          setUnits(JSON.parse(cachedUnits));
-        }
-      } catch (cacheError) {
-        console.error('Error loading cached units:', cacheError);
-      }
-      
+    } finally {
       setUnitLoading(false);
     }
   };
@@ -166,47 +115,22 @@ const AddPaymentScreen = ({ navigation }) => {
     setTenants([]);
     
     try {
-      // Check offline cache first
-      if (isOffline) {
-        const cachedTenants = await AsyncStorage.getItem(`cached_unit_tenants_${unitId}`);
-        if (cachedTenants) {
-          setTenants(JSON.parse(cachedTenants));
-        }
-        setTenantLoading(false);
-        return;
-      }
+      // Use context method instead of direct axios call
+      const response = await fetchUnitTenants(unitId);
       
-      // Fetch tenants for the selected unit
-      const response = await axios.get(endpoints.unitTenants(unitId), {
-        headers: { 'Authorization': `Token ${authState.token}` }
-      });
-      
-      if (response.data && response.data.results) {
-        const tenantsData = response.data.results;
-        setTenants(tenantsData);
-        // Cache tenants for this unit
-        await AsyncStorage.setItem(`cached_unit_tenants_${unitId}`, JSON.stringify(tenantsData));
+      if (response.success) {
+        setTenants(response.data);
         
         // If there's only one tenant, auto-select them
-        if (tenantsData.length === 1) {
-          setSelectedTenant(tenantsData[0].id);
+        if (response.data.length === 1) {
+          setSelectedTenant(response.data[0].id);
         }
+      } else {
+        console.error('Error fetching tenants:', response.error);
       }
-      
-      setTenantLoading(false);
     } catch (error) {
       console.error('Error loading tenants:', error);
-      
-      // Try to use cached data
-      try {
-        const cachedTenants = await AsyncStorage.getItem(`cached_unit_tenants_${unitId}`);
-        if (cachedTenants) {
-          setTenants(JSON.parse(cachedTenants));
-        }
-      } catch (cacheError) {
-        console.error('Error loading cached tenants:', cacheError);
-      }
-      
+    } finally {
       setTenantLoading(false);
     }
   };
@@ -272,8 +196,7 @@ const AddPaymentScreen = ({ navigation }) => {
     
     return true;
   };
-  
-  const handleSubmit = async () => {
+    const handleSubmit = async () => {
     if (isOffline) {
       Alert.alert('Offline Mode', 'Cannot create payments while offline');
       return;
@@ -296,62 +219,22 @@ const AddPaymentScreen = ({ navigation }) => {
         description: notes || ''
       };
       
-      const response = await axios.post(
-        endpoints.payments,
-        paymentData,
-        { headers: { 'Authorization': `Token ${authState.token}` } }
-      );
+      // Use context method instead of direct axios call
+      const response = await createPayment(paymentData);
       
-      if (response.data && response.data.id) {
-        // Update the cached payments list
-        try {
-          const cachedPayments = await AsyncStorage.getItem('cached_payments');
-          
-          if (cachedPayments) {
-            const currentPayments = JSON.parse(cachedPayments);
-            
-            // Find the unit and tenant names for the response data
-            const unit = units.find(u => u.id === selectedUnit);
-            const tenant = tenants.find(t => t.id === selectedTenant);
-            const property = properties.find(p => p.id === selectedProperty);
-            
-            // Create a UI-ready payment object
-            const newPayment = {
-              id: response.data.id.toString(),
-              tenant_name: tenant ? tenant.name : 'Unknown Tenant',
-              tenant_id: selectedTenant,
-              property_name: property ? property.name : 'Unknown Property',
-              property_id: selectedProperty,
-              unit_number: unit ? unit.unit_number : 'Unknown Unit',
-              unit_id: selectedUnit,
-              amount: parseFloat(amount),
-              due_date: dueDate.toISOString().split('T')[0],
-              status: 'pending',
-              payment_method: null,
-              payment_date: null,
-              notes: notes || '',
-              period_start: periodStart.toISOString().split('T')[0],
-              period_end: periodEnd.toISOString().split('T')[0],
-            };
-            
-            // Add to cache
-            await AsyncStorage.setItem('cached_payments', JSON.stringify([...currentPayments, newPayment]));
-          }
-        } catch (cacheError) {
-          console.error('Error updating cached payments:', cacheError);
-        }
-        
+      if (response.success) {
         Alert.alert(
           'Success',
           'Payment created successfully',
           [{ text: 'OK', onPress: () => navigation.goBack() }]
         );
+      } else {
+        Alert.alert('Error', response.error || 'Failed to create payment. Please try again.');
       }
-      
-      setLoading(false);
     } catch (error) {
       console.error('Error creating payment:', error);
       Alert.alert('Error', 'Failed to create payment. Please try again.');
+    } finally {
       setLoading(false);
     }
   };

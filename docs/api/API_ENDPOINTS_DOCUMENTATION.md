@@ -53,12 +53,20 @@ const API_ORGANIZATIONS = `${API_URL}/organizations`;
 
 | Feature | Endpoint | Method |
 |---------|----------|--------|
-| List Properties | `${API_PROPERTIES}/` | GET |
-| Property Details | `${API_PROPERTIES}/{id}/` | GET |
-| Property Units | `${API_PROPERTIES}/{id}/units/` | GET |
-| Property Rent Stats | `${API_PROPERTIES}/{id}/rent_stats/` | GET |
+| List Properties | `${API_PROPERTIES}/properties/` | GET |
+| Property Details | `${API_PROPERTIES}/properties/{id}/` | GET |
+| Property Units | `${API_PROPERTIES}/units/?property={id}` | GET |
+| Property Rent Stats | `${API_PROPERTIES}/properties/{id}/rent_stats/` | GET |
 | List Units | `${API_PROPERTIES}/units/` | GET |
 | Unit Details | `${API_PROPERTIES}/units/{id}/` | GET |
+| Available Units | `${API_PROPERTIES}/units/available/` | GET |
+| Allocate Tenant | `${API_PROPERTIES}/units/{id}/allocate_tenant/` | POST |
+| Reallocate Tenant | `${API_PROPERTIES}/units/{id}/allocate_tenant/` | PATCH |
+| Deallocate Tenant | `${API_PROPERTIES}/units/{id}/deallocate_tenant/` | POST |
+
+**Note on Allocation vs. Reallocation**: 
+- POST to allocate_tenant sets `is_occupied=True`
+- PATCH to allocate_tenant sets `is_occupied=False` - This indicates that a unit needs management attention after reallocation
 
 ### Tenants
 
@@ -67,8 +75,10 @@ const API_ORGANIZATIONS = `${API_URL}/organizations`;
 | List Tenants | `${API_TENANTS}/tenants/` | GET |
 | Tenant Details | `${API_TENANTS}/tenants/{id}/` | GET |
 | Create Tenant | `${API_TENANTS}/tenants/` | POST |
+| Update Tenant | `${API_TENANTS}/tenants/{id}/` | PATCH |
 | Unit Tenants | `${API_TENANTS}/tenants/?unit={id}` | GET |
 | Unit Leases | `${API_TENANTS}/leases/?unit={id}` | GET |
+| Transfer Tenant | `${API_TENANTS}/tenants/{id}/transfer/` | POST |
 
 ### Maintenance
 
@@ -86,6 +96,38 @@ const API_ORGANIZATIONS = `${API_URL}/organizations`;
 | List Payments | `${API_PAYMENTS}/rent-payments/` | GET |
 | Payment Details | `${API_PAYMENTS}/rent-payments/{id}/` | GET |
 | Unit Payments | `${API_PAYMENTS}/rent-payments/?unit={id}` | GET |
+
+## Tenant Allocation, Deallocation, and Transfer Payloads
+
+### Allocate Tenant
+```json
+{
+  "tenant_id": 123,
+  "lease_start_date": "2023-10-01", // Optional
+  "lease_end_date": "2024-09-30",   // Optional
+  "rent_amount": 1000,              // Optional, defaults to unit.monthly_rent
+  "security_deposit": 1000          // Optional, defaults to unit.security_deposit
+}
+```
+
+### Deallocate Tenant
+```json
+{
+  "tenant_id": 123
+}
+```
+
+### Transfer Tenant
+```json
+{
+  "from_unit_id": 123,
+  "to_unit_id": 456,
+  "lease_start_date": "2023-10-01", // Optional
+  "lease_end_date": "2024-09-30",   // Optional
+  "rent_amount": 1000,              // Optional, defaults to unit.monthly_rent
+  "security_deposit": 1000          // Optional, defaults to unit.security_deposit
+}
+```
 
 ## Offline Support
 

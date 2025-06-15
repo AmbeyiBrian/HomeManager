@@ -49,6 +49,10 @@ import NoticeDetailScreen from './screens/NoticeDetailScreen';
 import CreateNoticeScreen from './screens/CreateNoticeScreen';
 import EditNoticeScreen from './screens/EditNoticeScreen';
 
+// Import Tenant-related Screens
+import TenantDetailsScreen from './screens/TenantDetailsScreen';
+import EditTenantScreen from './screens/EditTenantScreen';
+
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
 
@@ -283,19 +287,48 @@ const MainStackNavigator = () => (
       name="SubscriptionManagement" 
       component={SubscriptionManagementScreen}
       options={{ title: 'Subscription Management' }}
-    />
+    />    
     <Stack.Screen 
       name="InviteUser" 
       component={InviteUserScreen}
       options={{ title: 'Invite User' }}
+    />    
+    <Stack.Screen 
+      name="TenantDetails" 
+      component={TenantDetailsScreen}
+      options={{ title: 'Tenant Details' }}
+    />
+    <Stack.Screen 
+      name="EditTenant" 
+      component={EditTenantScreen}
+      options={{ title: 'Edit Tenant' }}
     />
   </Stack.Navigator>
 );
 
 // Root Navigator that handles authentication state
 const RootNavigator = () => {
-  const { authState, checkAndRefreshToken } = useAuth();
+  const { authState, checkAndRefreshToken, autoLogin } = useAuth();
   const { authenticated, loading, isOffline } = authState;
+  
+  // Attempt auto login when app is mounted
+  React.useEffect(() => {
+    const attemptAutoLogin = async () => {
+      console.log('App starting - checking for saved credentials');
+      // If not authenticated yet, try auto login
+      if (!authenticated && !loading) {
+        console.log('Not authenticated, attempting auto-login');
+        const result = await autoLogin();
+        if (result.success) {
+          console.log('Auto-login successful');
+        } else {
+          console.log('Auto-login failed, user will need to log in manually');
+        }
+      }
+    };
+    
+    attemptAutoLogin();
+  }, []);
   
   // Check and refresh token when app is mounted
   React.useEffect(() => {

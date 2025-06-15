@@ -679,13 +679,15 @@ class Command(BaseCommand):
                     # 80% chance of payment being made
                     if random.random() < 0.8:
                         payment_date = current_date + timedelta(days=random.randint(0, 10))
+                        # Convert date to timezone-aware datetime
+                        payment_datetime = timezone.make_aware(datetime.combine(payment_date, datetime.min.time()))
                         
                         payment = RentPayment.objects.create(
                             unit=lease.unit,
                             tenant=lease.tenant,
                             amount=lease.unit.monthly_rent + Decimal(str(random.randint(-2000, 2000))),  # Some variation
                             due_date=current_date,
-                            payment_date=payment_date,
+                            payment_date=payment_datetime,
                             payment_method=random.choice(['m_pesa', 'bank', 'cash', 'other']),
                             status='completed',
                             transaction_id=f"PAY_{uuid.uuid4().hex[:8].upper()}",
@@ -804,16 +806,23 @@ class Command(BaseCommand):
                 )
                 
                 message_types = ['rent_reminder', 'payment_confirmation', 'maintenance_notice', 'general']
+                  # Convert sent_date to timezone-aware datetime if it's not already
+                sent_datetime = sent_date
+                if not timezone.is_aware(sent_datetime):
+                    sent_datetime = timezone.make_aware(sent_datetime)
+                    
+                # Also make delivery time timezone-aware
+                delivery_datetime = sent_datetime + timedelta(seconds=random.randint(1, 30))
                 
                 SMSMessage.objects.create(
                     tenant=tenant,
                     phone_number=tenant.phone_number,
                     message_content=fake.text(max_nb_chars=160),
                     message_type=random.choice(message_types),
-                    sent_at=sent_date,
+                    sent_at=sent_datetime,
                     status='sent',
                     delivery_status=random.choice(['delivered', 'failed', 'pending']),
-                    delivery_time=sent_date + timedelta(seconds=random.randint(1, 30))
+                    delivery_time=delivery_datetime
                 )
                 total_messages += 1
         

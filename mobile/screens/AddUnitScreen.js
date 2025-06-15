@@ -16,6 +16,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import moment from 'moment';
+import axios from 'axios';
+import { API_PROPERTIES, API_TENANTS } from '../config/apiConfig';
 
 const AddUnitScreen = ({ route, navigation }) => {
   const { propertyId } = route.params;
@@ -90,8 +92,7 @@ const AddUnitScreen = ({ route, navigation }) => {
     
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
-  };
-  // Handle form submission
+  };  // Handle form submission
   const handleSubmit = async () => {
     if (!validateForm()) {
       return;
@@ -119,7 +120,8 @@ const AddUnitScreen = ({ route, navigation }) => {
       };
         
       // Use the createUnit function from the auth context
-      const unitResponse = await createUnit(unitData);
+      console.log('Creating unit with data:', unitData);
+      const unitResponse = await createUnit(propertyId, unitData);
       
       if (unitResponse && unitResponse.success) {
         // If the unit is occupied, create a tenant
@@ -136,14 +138,40 @@ const AddUnitScreen = ({ route, navigation }) => {
           
           if (!tenantResponse.success) {
             setLoading(false);
-            const errorMessage = typeof tenantResponse?.error === 'object'
-              ? JSON.stringify(tenantResponse.error)
-              : (tenantResponse?.error || 'Unknown error');
             
+            // Extract and format tenant creation error
+            let errorMessage = '';
+            if (typeof tenantResponse?.error === 'object') {
+              errorMessage = JSON.stringify(tenantResponse.error);
+            } else {
+              errorMessage = tenantResponse?.error || 'Unknown error';
+            }
+            
+            // Show partial success message and options
             Alert.alert(
               'Partial Success',
               `Unit was created successfully, but tenant could not be added: ${errorMessage}`,
-              [{ text: 'OK', onPress: () => navigation.goBack() }]
+              [
+                { 
+                  text: 'Go Back',
+                  onPress: () => navigation.goBack() 
+                },
+                {
+                  text: 'Fix Unit', 
+                  onPress: async () => {
+                    // Update unit to set is_occupied to false since tenant creation failed
+                    try {
+                      await axios.patch(`${API_PROPERTIES}/units/${unitResponse.data.id}/`, {
+                        is_occupied: false
+                      });
+                      console.log('Updated unit to set is_occupied=false');
+                    } catch (updateError) {
+                      console.error('Error updating unit occupied status:', updateError);
+                    }
+                    navigation.goBack();
+                  }
+                }
+              ]
             );
             return;
           }
@@ -159,9 +187,22 @@ const AddUnitScreen = ({ route, navigation }) => {
         );
       } else {
         setLoading(false);
-        const errorMessage = typeof unitResponse?.error === 'object'
-          ? JSON.stringify(unitResponse.error)
-          : (unitResponse?.error || 'Unknown error');
+        
+        // Enhanced error handling for unit creation
+        let errorMessage = '';
+        if (typeof unitResponse?.error === 'object') {
+          // Check for specific field errors
+          if (unitResponse?.error?.unit_number) {
+            errorMessage = `Unit Number: ${unitResponse.error.unit_number}`;
+          } else if (unitResponse?.error?.monthly_rent) {
+            errorMessage = `Monthly Rent: ${unitResponse.error.monthly_rent}`;
+          } else {
+            errorMessage = JSON.stringify(unitResponse.error);
+          }
+        } else {
+          errorMessage = unitResponse?.error || 'Unknown error';
+        }
+        
         Alert.alert('Error', `Failed to add unit: ${errorMessage}`);
       }
       

@@ -24,7 +24,7 @@ class UnitSerializer(serializers.ModelSerializer):
     class Meta:
         model = Unit
         fields = ['id', 'property', 'unit_number', 'unit_type', 'floor', 'size', 'bedrooms', 
-                 'bathrooms', 'monthly_rent', 'is_occupied', 'description', 
+                 'bathrooms', 'monthly_rent', 'security_deposit', 'is_occupied', 'description', 
                  'access_code', 'qr_code', 'tenant_name']
         read_only_fields = ['id']
     

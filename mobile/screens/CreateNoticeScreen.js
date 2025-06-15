@@ -1,18 +1,25 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity, Switch, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity, Switch, Alert, ActivityIndicator, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
-// import DateTimePicker from '@react-native-community/datetimepicker'; // Consider adding for date inputs
-// import { Picker } from '@react-native-picker/picker'; // Consider adding for type selection
+import DateTimePicker from '@react-native-community/datetimepicker'; // For date selection
 
-const CreateNoticeScreen = ({ navigation }) => {  const [title, setTitle] = useState('');
-  const [content, setContent] = useState('');  const [type, setType] = useState('general'); // Match backend enum value
+const CreateNoticeScreen = ({ navigation }) => {  
+  const [title, setTitle] = useState('');
+  const [content, setContent] = useState('');  
+  const [type, setType] = useState('general'); // Match backend enum value
   const [isImportant, setIsImportant] = useState(false);
   const [sendSMS, setSendSMS] = useState(false); // SMS option
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [properties, setProperties] = useState([]);
   const [selectedProperty, setSelectedProperty] = useState(null);
   const [propertiesLoading, setPropertiesLoading] = useState(false);
+  
+  // Date states
+  const [startDate, setStartDate] = useState(new Date());
+  const [endDate, setEndDate] = useState(null);
+  const [showStartDatePicker, setShowStartDatePicker] = useState(false);
+  const [showEndDatePicker, setShowEndDatePicker] = useState(false);
   
   // Get the API functions from AuthContext
   const { createNotice, fetchProperties, isOffline } = useAuth();
@@ -45,10 +52,35 @@ const CreateNoticeScreen = ({ navigation }) => {  const [title, setTitle] = useS
     
     if (!isOffline) {
       loadProperties();
-    }
-  // Use an empty dependency array and manually handle the properties check inside
+    }  // Use an empty dependency array and manually handle the properties check inside
   // This prevents the endless API calls caused by fetchProperties being recreated
   }, []);
+  
+  // Handle start date change
+  const onStartDateChange = (event, selectedDate) => {
+    const currentDate = selectedDate || startDate;
+    setShowStartDatePicker(Platform.OS === 'ios');
+    setStartDate(currentDate);
+  };
+  
+  // Handle end date change
+  const onEndDateChange = (event, selectedDate) => {
+    const currentDate = selectedDate || endDate;
+    setShowEndDatePicker(Platform.OS === 'ios');
+    setEndDate(currentDate);
+  };
+  
+  // Format date for display
+  const formatDateForDisplay = (date) => {
+    if (!date) return 'Not set';
+    return date.toLocaleDateString();
+  };
+  
+  // Format date for API (YYYY-MM-DD)
+  const formatDateForAPI = (date) => {
+    if (!date) return null;
+    return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  };
   
   const handleCreateNotice = async () => {
     if (isOffline) {
@@ -64,26 +96,35 @@ const CreateNoticeScreen = ({ navigation }) => {  const [title, setTitle] = useS
     if (!selectedProperty) {
       Alert.alert('Property Required', 'Please select a property for this notice.');
       return;
-    }
-    
-    setIsSubmitting(true);    try {      const noticeData = {
+    }      setIsSubmitting(true);
+    try {
+      // Use selected dates
+      const formattedStartDate = formatDateForAPI(startDate);
+      const formattedEndDate = formatDateForAPI(endDate);
+        const noticeData = {
         title: title.trim(),
         content: content.trim(),
         notice_type: type, // Updated field name to match backend model
         is_important: isImportant, // Updated field name to match backend model
-        property_id: selectedProperty,
-        start_date: new Date().toISOString().split('T')[0], // Today's date
+        property_id: selectedProperty, // Using property_id which the backend now supports
+        start_date: formattedStartDate, // User-selected start date
+        end_date: formattedEndDate, // User-selected end date or null
         send_sms: sendSMS, // Include SMS flag
-        // Send more fields as needed
+        // No need to send creator - backend assigns automatically
       };
-      
+            
       const result = await createNotice(noticeData);
       if (result.success) {
         Alert.alert('Notice Created', 'The notice has been successfully created.', [
           { text: 'OK', onPress: () => navigation.goBack() }
         ]);
       } else {
-        Alert.alert('Creation Failed', result.error || 'Could not create the notice. Please try again.');
+        console.error('Notice creation failed with error:', result.error);
+        Alert.alert('Creation Failed', 
+          typeof result.error === 'object' 
+            ? JSON.stringify(result.error) 
+            : (result.error || 'Could not create the notice. Please try again.')
+        );
       }
     } catch (error) {
       console.error("Failed to create notice:", error);
@@ -167,9 +208,7 @@ const CreateNoticeScreen = ({ navigation }) => {  const [title, setTitle] = useS
           onValueChange={setSendSMS}
           value={sendSMS}
         />
-      </View>
-
-      <View style={styles.inputGroup}>
+      </View>      <View style={styles.inputGroup}>
         <Text style={styles.label}>Select Property</Text>
         {propertiesLoading ? (
           <ActivityIndicator size="small" color="#3498db" />
@@ -190,6 +229,60 @@ const CreateNoticeScreen = ({ navigation }) => {  const [title, setTitle] = useS
                 </TouchableOpacity>              ))
             )}
           </View>
+        )}
+      </View>
+      
+      {/* Start Date Picker */}
+      <View style={styles.inputGroup}>
+        <Text style={styles.label}>Start Date (Required)</Text>
+        <TouchableOpacity 
+          style={styles.dateButton} 
+          onPress={() => setShowStartDatePicker(true)}
+        >
+          <Text style={styles.dateButtonText}>
+            {formatDateForDisplay(startDate)}
+          </Text>
+          <Ionicons name="calendar-outline" size={24} color="#3498db" />
+        </TouchableOpacity>
+        {showStartDatePicker && (
+          <DateTimePicker
+            value={startDate}
+            mode="date"
+            display="default"
+            onChange={onStartDateChange}
+            minimumDate={new Date()}
+          />
+        )}
+      </View>
+      
+      {/* End Date Picker */}
+      <View style={styles.inputGroup}>
+        <Text style={styles.label}>End Date (Optional)</Text>
+        <TouchableOpacity 
+          style={styles.dateButton} 
+          onPress={() => setShowEndDatePicker(true)}
+        >
+          <Text style={styles.dateButtonText}>
+            {endDate ? formatDateForDisplay(endDate) : 'Not set'}
+          </Text>
+          <Ionicons name="calendar-outline" size={24} color="#3498db" />
+        </TouchableOpacity>
+        {showEndDatePicker && (
+          <DateTimePicker
+            value={endDate || new Date()}
+            mode="date"
+            display="default"
+            onChange={onEndDateChange}
+            minimumDate={startDate}
+          />
+        )}
+        {endDate && (
+          <TouchableOpacity
+            style={styles.clearDateButton}
+            onPress={() => setEndDate(null)}
+          >
+            <Text style={styles.clearDateText}>Clear End Date</Text>
+          </TouchableOpacity>
         )}
       </View>
       
@@ -274,6 +367,31 @@ const styles = StyleSheet.create({
   },
   typeButtonTextSelected: {
     color: '#fff',
+  },
+  dateButton: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+  },
+  dateButtonText: {
+    fontSize: 16,
+    color: '#333',
+  },
+  clearDateButton: {
+    marginTop: 10,
+    padding: 8,
+    alignItems: 'center',
+  },
+  clearDateText: {
+    color: '#e74c3c',
+    fontSize: 14,
+    fontWeight: '500',
   },  switchGroup: {
     flexDirection: 'row',
     justifyContent: 'space-between',

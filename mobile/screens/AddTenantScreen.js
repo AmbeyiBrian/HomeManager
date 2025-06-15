@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useAuth } from '../context/AuthContext';
 import { useApi } from '../hooks/useApi';
+import UnitFilterModal from '../components/UnitFilterModal';
 
 const AddTenantScreen = ({ route, navigation }) => {  const { 
     unitId: initialUnitId, 
@@ -45,10 +46,11 @@ const AddTenantScreen = ({ route, navigation }) => {  const {
   const [selectedUnitId, setSelectedUnitId] = useState(initialUnitId);
   const [selectedUnitNumber, setSelectedUnitNumber] = useState(initialUnitNumber);
   const [availableUnits, setAvailableUnits] = useState([]);
-  const [loadingUnits, setLoadingUnits] = useState(false);
-  const [showUnitSelector, setShowUnitSelector] = useState(false);
+  const [loadingUnits, setLoadingUnits] = useState(false);  const [showUnitSelector, setShowUnitSelector] = useState(false);
   const [unitSearchQuery, setUnitSearchQuery] = useState('');
   const [filteredUnits, setFilteredUnits] = useState([]);
+  const [showFilterModal, setShowFilterModal] = useState(false);
+  const [activeFilters, setActiveFilters] = useState({});
   
   // UI state
   const [loading, setLoading] = useState(false);
@@ -93,11 +95,10 @@ const AddTenantScreen = ({ route, navigation }) => {  const {
       setFilteredUnits([]);
     }
   }, [unitSearchQuery, availableUnits]);
-  
   // Fetch units for the property when coming from TenantsScreen
-  const fetchUnitsForProperty = async () => {
-    if (!fetchUnitsByProperty) {
-      Alert.alert('Error', 'Unable to fetch units. Please try again.');
+  const fetchUnitsForProperty = async (filters = activeFilters) => {
+    if (!auth?.fetchAvailableUnits) {
+      Alert.alert('Error', 'Unable to fetch available units. Please try again.');
       return;
     }
     
@@ -120,32 +121,49 @@ const AddTenantScreen = ({ route, navigation }) => {  const {
         targetPropertyId = property.id;
       }
       
-      const response = await fetchUnitsByProperty(targetPropertyId);
+      // Use new fetchAvailableUnits API which already filters by availability
+      // Pass any active filters to the API
+      const response = await auth.fetchAvailableUnits(targetPropertyId, filters);
         if (response.success) {
-        // Filter to only show vacant units (units without tenants)
-        const vacantUnits = response.data.filter(unit => !unit.is_occupied);
-        setAvailableUnits(vacantUnits);
-        setFilteredUnits(vacantUnits);
+        // The units returned are already available (no need to filter by is_occupied)
+        const availableUnits = response.data;
+        setAvailableUnits(availableUnits);
+        setFilteredUnits(availableUnits);
         setUnitSearchQuery('');
         
-        if (vacantUnits.length === 0) {
-          Alert.alert(
-            'No Vacant Units',
-            'All units in this property are currently occupied. Please select a different property or free up a unit first.',
-            [
-              { text: 'OK', onPress: () => navigation.goBack() }
-            ]
-          );
-        } else if (vacantUnits.length === 1) {
-          // If only one vacant unit, auto-select it
-          setSelectedUnitId(vacantUnits[0].id);
-          setSelectedUnitNumber(vacantUnits[0].unit_number);
+        if (availableUnits.length === 0) {
+          // Check if we have filters applied
+          if (Object.keys(filters).length > 0) {
+            Alert.alert(
+              'No Matching Units',
+              'No units match your filter criteria. Try adjusting your filters.',
+              [
+                { text: 'Clear Filters', onPress: () => {
+                  setActiveFilters({});
+                  fetchUnitsForProperty({});
+                }},
+                { text: 'OK' }
+              ]
+            );
+          } else {
+            Alert.alert(
+              'No Available Units',
+              'There are no available units in this property. Please select a different property or free up a unit first.',
+              [
+                { text: 'OK', onPress: () => navigation.goBack() }
+              ]
+            );
+          }
+        } else if (availableUnits.length === 1) {
+          // If only one available unit, auto-select it
+          setSelectedUnitId(availableUnits[0].id);
+          setSelectedUnitNumber(availableUnits[0].unit_number);
         } else {
           // Multiple units available, show selector
           setShowUnitSelector(true);
         }
       } else {
-        Alert.alert('Error', `Failed to fetch units: ${response.error}`);
+        Alert.alert('Error', `Failed to fetch available units: ${response.error}`);
       }
     } catch (error) {
       console.error('Error fetching units for property:', error);

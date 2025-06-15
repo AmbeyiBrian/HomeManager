@@ -172,6 +172,187 @@ class UnitViewSet(viewsets.ModelViewSet):
         
         return queryset
     
+    @action(detail=False, methods=['get'])
+    def available(self, request):
+        """List available (unoccupied) units with optional filtering"""
+        # Get basic queryset using the same organization filtering as get_queryset
+        queryset = self.get_queryset()
+        
+        # Filter to only show available (unoccupied) units
+        queryset = queryset.filter(is_occupied=False)
+        
+        # Additional filters
+        property_id = request.query_params.get('property_id', None)
+        bedrooms = request.query_params.get('bedrooms', None)
+        bathrooms = request.query_params.get('bathrooms', None)
+        max_rent = request.query_params.get('max_rent', None)
+        max_security_deposit = request.query_params.get('max_security_deposit', None)
+        
+        if property_id:
+            queryset = queryset.filter(property_id=property_id)
+            
+        if bedrooms:
+            queryset = queryset.filter(bedrooms=bedrooms)
+            
+        if bathrooms:
+            queryset = queryset.filter(bathrooms=bathrooms)
+            
+        if max_rent:
+            queryset = queryset.filter(monthly_rent__lte=max_rent)
+            
+        if max_security_deposit:
+            queryset = queryset.filter(security_deposit__lte=max_security_deposit)
+        
+        # Serialize and return the data
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+    @action(detail=True, methods=['post', 'patch'])
+    def allocate_tenant(self, request, pk=None):
+        """Allocate a tenant to this unit"""
+        from tenants.models import Tenant, Lease
+        
+        unit = self.get_object()
+        tenant_id = request.data.get('tenant_id')
+        
+        if not tenant_id:
+            return Response(
+                {'error': 'tenant_id is required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Check if unit is already occupied by a different tenant
+        if unit.is_occupied and request.method == 'POST':
+            return Response(
+                {'error': 'Unit is already occupied'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Get the tenant object
+        try:
+            tenant = Tenant.objects.get(id=tenant_id)
+        except Tenant.DoesNotExist:
+            return Response(
+                {'error': f'Tenant with ID {tenant_id} does not exist'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # For POST requests (new allocations), prevent if tenant is already assigned
+        # For PATCH requests (reallocations), allow changing units
+        if tenant.unit and request.method == 'POST':
+            return Response(
+                {'error': f'Tenant is already assigned to unit {tenant.unit.unit_number}. Use PATCH to reallocate.'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+          # Extract lease details from request data
+        lease_start_date = request.data.get('lease_start_date')
+        lease_end_date = request.data.get('lease_end_date')
+        rent_amount = request.data.get('rent_amount', unit.monthly_rent)
+        security_deposit = request.data.get('security_deposit', unit.security_deposit)
+        
+        # Assign tenant to unit
+        tenant.unit = unit
+        tenant.save()
+          # Mark unit as occupied for POST and as unoccupied for PATCH (reallocation)
+        # For PATCH (reallocation), we set is_occupied to False to indicate
+        # that the unit is being reallocated and needs management attention
+        if request.method == 'POST':
+            unit.is_occupied = True
+        else:  # PATCH
+            unit.is_occupied = False
+        unit.save()
+          # Create lease if lease dates are provided
+        lease = None
+        if lease_start_date and lease_end_date:
+            # Note: Lease model doesn't have rent_amount and security_deposit fields
+            # Those values are properties of the unit, not the lease
+            lease = Lease.objects.create(
+                tenant=tenant,
+                unit=unit,
+                start_date=lease_start_date,
+                end_date=lease_end_date,
+                is_active=True
+            )
+            
+            # If we need to update unit rent amount or security deposit
+            if rent_amount != unit.monthly_rent or security_deposit != unit.security_deposit:
+                unit.monthly_rent = rent_amount
+                unit.security_deposit = security_deposit
+                unit.save()
+        
+        # Return response with updated tenant info
+        from tenants.serializers import TenantDetailSerializer
+        tenant_serializer = TenantDetailSerializer(tenant)
+        
+        response_data = tenant_serializer.data
+        if lease:
+            from tenants.serializers import LeaseSerializer
+            lease_serializer = LeaseSerializer(lease)
+            response_data['lease'] = lease_serializer.data
+        
+        return Response(response_data, status=status.HTTP_200_OK)
+    
+    @action(detail=True, methods=['post'])
+    def deallocate_tenant(self, request, pk=None):
+        """Deallocate a tenant from this unit"""
+        from tenants.models import Tenant, Lease
+        
+        unit = self.get_object()
+        tenant_id = request.data.get('tenant_id')
+        
+        if not tenant_id:
+            return Response(
+                {'error': 'tenant_id is required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Check if unit is occupied
+        if not unit.is_occupied:
+            return Response(
+                {'error': 'Unit is not occupied'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Get the tenant object
+        try:
+            tenant = Tenant.objects.get(id=tenant_id)
+        except Tenant.DoesNotExist:
+            return Response(
+                {'error': f'Tenant with ID {tenant_id} does not exist'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Check if tenant is assigned to this unit
+        if tenant.unit != unit:
+            return Response(
+                {'error': 'Tenant is not assigned to this unit'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Deactivate any active leases
+        active_leases = Lease.objects.filter(tenant=tenant, unit=unit, is_active=True)
+        for lease in active_leases:
+            lease.is_active = False
+            lease.save()
+        
+        # Deallocate tenant from unit
+        tenant.unit = None
+        tenant.save()
+        
+        # Mark unit as unoccupied
+        unit.is_occupied = False
+        unit.save()
+        
+        # Return response with updated tenant info
+        from tenants.serializers import TenantDetailSerializer
+        tenant_serializer = TenantDetailSerializer(tenant)
+        
+        return Response(tenant_serializer.data, status=status.HTTP_200_OK)
+    
     @action(detail=True, methods=['post'])
     def generate_qr_code(self, request, pk=None):
         """Generate a QR code for the unit"""

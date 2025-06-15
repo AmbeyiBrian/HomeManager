@@ -474,19 +474,26 @@ const PaymentsScreen = ({ navigation }) => {
 
     try {
       if (isOffline) {
-        const cachedPayments = await AsyncStorage.getItem('cached_payments');        if (cachedPayments) {
+        const cachedPayments = await AsyncStorage.getItem('cached_payments');
+        if (cachedPayments) {
           const paymentsData = JSON.parse(cachedPayments);
           setPayments(paymentsData);
         } else {
           setPayments([]);
           setError('No payment data available while offline.');
-        }        setLoading(false);
+        }
+        setLoading(false);
         return;
-      }      const paymentsResult = await fetchAllPayments({
-        property: propertyFilter !== 'all' ? propertyFilter : null,
-        tenant: tenantFilter !== 'all' ? tenantFilter : null,
-        status: filterStatus !== 'all' ? filterStatus : null,
-      });
+      }
+      
+      const paymentsResult = await fetchAllPayments(
+        true, // forceRefresh
+        1, // page
+        20, // pageSize
+        filterStatus !== 'all' ? filterStatus : null,
+        propertyFilter !== 'all' ? propertyFilter : null,
+        tenantFilter !== 'all' ? tenantFilter : null
+      );
 
       if (paymentsResult && paymentsResult.success && paymentsResult.data) {
         const processedPayments = paymentsResult.data.map(payment => ({
@@ -501,11 +508,13 @@ const PaymentsScreen = ({ navigation }) => {
           status: payment.status,
           payment_method: payment.payment_method,
           notes: payment.description,
-        }));        setPayments(processedPayments);
+        }));
         
-        // Save the nextPageUrl from the API response
-        console.log('[fetchPayments] Setting nextPageUrl from initial fetch:', paymentsResult.nextPageUrl);
-        setNextPageUrl(paymentsResult.nextPageUrl || null);
+        setPayments(processedPayments);
+        
+        // Save the nextPageUrl from the pagination info in API response
+        console.log('[fetchPayments] Setting nextPageUrl from initial fetch:', paymentsResult.pagination?.nextPageUrl);
+        setNextPageUrl(paymentsResult.pagination?.nextPageUrl || null);
         
         await AsyncStorage.setItem('cached_payments', JSON.stringify(processedPayments));
       } else {
@@ -676,19 +685,21 @@ const PaymentsScreen = ({ navigation }) => {
     console.log('[handleLoadMore] Starting to load more payments with URL:', nextPageUrl);
     setIsLoadingMore(true);
     try {
-      // Pass both nextPageUrl AND current filter parameters to ensure consistent filtering
-      const paymentsResult = await fetchAllPayments({
-        nextPageUrl,
-        // Include current filter parameters to ensure consistency with initial request
-        property: propertyFilter !== 'all' ? propertyFilter : null,
-        tenant: tenantFilter !== 'all' ? tenantFilter : null,
-        status: filterStatus !== 'all' ? filterStatus : null,
-      });
+      // Use the nextPageUrl to fetch the next page
+      const paymentsResult = await fetchAllPayments(
+        false, // Don't force refresh
+        undefined, // page (will be ignored when nextPageUrl is provided)
+        20, // pageSize (will be ignored when nextPageUrl is provided)
+        filterStatus !== 'all' ? filterStatus : null,
+        propertyFilter !== 'all' ? propertyFilter : null,
+        tenantFilter !== 'all' ? tenantFilter : null,
+        nextPageUrl // Pass the nextPageUrl
+      );
       
       console.log('[handleLoadMore] API result:', {
         success: paymentsResult?.success,
         dataLength: paymentsResult?.data?.length,
-        newNextPageUrl: paymentsResult?.nextPageUrl,
+        newNextPageUrl: paymentsResult?.pagination?.nextPageUrl,
         fromCache: paymentsResult?.fromCache
       });
       
@@ -714,16 +725,18 @@ const PaymentsScreen = ({ navigation }) => {
             payment_method: payment.payment_method,
             payment_date: payment.payment_date,
             notes: payment.description,
-          };        });
+          };
+        });
 
         console.log('[handleLoadMore] Processed new payments:', {
           newPaymentsCount: newProcessed.length,
           totalPaymentsAfterUpdate: payments.length + newProcessed.length,
-          updatedNextPageUrl: paymentsResult.nextPageUrl
+          updatedNextPageUrl: paymentsResult.pagination?.nextPageUrl
         });
 
         setPayments(prev => [...prev, ...newProcessed]);
-        setNextPageUrl(paymentsResult.nextPageUrl || null);      }
+        setNextPageUrl(paymentsResult.pagination?.nextPageUrl || null);
+      }
     } catch (err) {
       console.error('[handleLoadMore] Error loading more payments:', err);
       console.error('[handleLoadMore] Error details:', {

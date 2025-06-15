@@ -99,14 +99,12 @@ class NoticeViewSet(viewsets.ModelViewSet):
         if not created:
             notice_view.viewed_at = timezone.now()
             notice_view.save()
-        
         serializer = NoticeViewSerializer(notice_view)
         return Response(serializer.data)
-
+        
     def perform_create(self, serializer):
-        """Create notice and optionally send SMS notifications"""
-        # Save the notice first
-        notice = serializer.save()
+        """Create notice and optionally send SMS notifications"""        # Save the notice with the current user as creator
+        notice = serializer.save(creator=self.request.user)
         
         # Check if SMS should be sent
         send_sms_flag = serializer.validated_data.get('send_sms', False)

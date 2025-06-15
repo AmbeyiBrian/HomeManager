@@ -30,13 +30,12 @@ const DashboardScreen = ({ navigation }) => {
   const { user, isOffline, getCachedData, cacheDataForOffline } = useAuth();
   const { endpoints } = useApi();  
   const [isLoading, setIsLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [dashboardData, setDashboardData] = useState({
+  const [refreshing, setRefreshing] = useState(false);  const [dashboardData, setDashboardData] = useState({
     properties: [],
     tenants: [],
     tickets: [],
     pendingPayments: [],
-    fromCache: false
+    fromCache: isOffline // Only show fromCache if we're actually offline at start
   });
 
   // Chart data states
@@ -51,8 +50,7 @@ const DashboardScreen = ({ navigation }) => {
   const fetchDashboardData = async () => {
     try {
       setIsLoading(true);
-      
-      // Check if we're offline first
+        // Check if we're offline first
       if (isOffline) {
         // If offline, use cached data
         const dashboardSummary = await getCachedData('dashboard_summary') || {};
@@ -69,7 +67,7 @@ const DashboardScreen = ({ navigation }) => {
           pendingPayments: payments.filter(payment => payment.status === 'pending'),
           tenants,
           summary: dashboardSummary,
-          fromCache: true
+          fromCache: true // This is correct since we're offline
         });
 
         setIsLoading(false);
@@ -122,15 +120,14 @@ const DashboardScreen = ({ navigation }) => {
         const propertiesData = propertiesResponse?.data?.results || [];
         const ticketsData = ticketsResponse?.data?.results || [];
         const paymentsData = paymentsResponse?.data?.results || [];
-        const tenantsData = tenantsResponse?.data?.results || [];
-          // Set data to state
+        const tenantsData = tenantsResponse?.          // Set data to state
         setDashboardData({
           properties: propertiesData,
           tickets: ticketsData,
           pendingPayments: paymentsData,
           tenants: tenantsData,
           summary: summaryData,
-          fromCache: false
+          fromCache: false // Explicitly mark as not from cache
         });
         
           
@@ -143,8 +140,7 @@ const DashboardScreen = ({ navigation }) => {
           if (tenantsData.length) await cacheDataForOffline('tenants_data', tenantsData);
         } catch (cacheError) {
           console.error('Error caching dashboard data:', cacheError);
-        }
-      } catch (error) {
+        }      } catch (error) {
         console.error('Error fetching online data:', error);
         
         // Try to fall back to cached data if online fetch fails
@@ -153,6 +149,9 @@ const DashboardScreen = ({ navigation }) => {
         const tickets = await getCachedData('tickets_data') || [];
         const payments = await getCachedData('payments_data') || [];
         const tenants = await getCachedData('tenants_data') || [];
+        
+        // Only mark as fromCache if we're actually offline or if we have a connection error
+        const isNetworkError = error.message === 'Network Error' || error.code === 'ECONNABORTED';
         
         setDashboardData({
           properties,
@@ -163,7 +162,7 @@ const DashboardScreen = ({ navigation }) => {
           tenants,
           summary: dashboardSummary,
           error: `Error: ${error.message || 'Failed to fetch dashboard data'}`,
-          fromCache: true
+          fromCache: isOffline || isNetworkError
         });
       }
       
@@ -258,9 +257,14 @@ const DashboardScreen = ({ navigation }) => {
       setChartsLoading(false);
     }
   };
-
   const onRefresh = async () => {
     setRefreshing(true);
+    
+    // Only show from cache if we're actually offline
+    if (!isOffline) {
+      setDashboardData(prev => ({...prev, fromCache: false}));
+    }
+    
     await fetchDashboardData();
     await fetchAnalyticsData();
     setRefreshing(false);
@@ -281,39 +285,41 @@ const DashboardScreen = ({ navigation }) => {
       style={styles.container}
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-      }>
-      {/* Cache notification banner */}
-      <CacheBanner visible={dashboardData.fromCache} />
+      }>      {/* Cache notification banner */}
+      <CacheBanner 
+        visible={dashboardData.fromCache} 
+        message={isOffline ? "Offline mode - showing cached data" : "Showing cached data - pull to refresh"} 
+      />
       
       {/* API debugger only shown in development */}
         
-      {/* Dashboard Cards Row */}
-      <View style={styles.cardsContainer}>
-        <DashboardCard
+      {/* Dashboard Cards Row - Phase 1 Testing */}
+      <View style={styles.cardsContainer}>        <DashboardCard
           title="Properties"
-          value={String(dashboardData.summary?.property_count || 0)}
+          value={dashboardData.summary?.property_count ? String(dashboardData.summary.property_count) : "0"}
           icon="home-outline"
           color="#3498db"
-          subtitle={`${dashboardData.summary?.unit_count || 0} total units`}
+          subtitle={dashboardData.summary?.unit_count ? `${dashboardData.summary.unit_count} total units` : "0 total units"}
           trend={dashboardData.summary?.property_growth}
           loading={isLoading}
         />
         
         <DashboardCard
           title="Occupancy Rate"
-          value={`${dashboardData.summary?.vacancy_rate ? (100 - dashboardData.summary.vacancy_rate).toFixed(1) : '0.0'}%`}
+          value={dashboardData.summary?.vacancy_rate ? `${(100 - dashboardData.summary.vacancy_rate).toFixed(1)}%` : "0.0%"}
           icon="people-outline"
           color="#2ecc71"
-          subtitle={`${dashboardData.summary?.occupied_count || 0} occupied`}
+          subtitle={dashboardData.summary?.occupied_count ? `${dashboardData.summary.occupied_count} occupied` : "0 occupied"}
           trend={dashboardData.summary?.occupancy_trend}
           loading={isLoading}
         />
-      </View>
-
+      </View>      {/* Second row of cards */}
       <View style={styles.cardsContainer}>        
         <DashboardCard
           title="Revenue (Month)"
-          value={`KSH ${Number(dashboardData.summary?.recent_payment_sum || 0).toLocaleString()}`}
+          value={dashboardData.summary?.recent_payment_sum 
+            ? `KSH ${Number(dashboardData.summary.recent_payment_sum).toLocaleString()}`
+            : "KSH 0"}
           icon="cash-outline"
           color="#27ae60"
           subtitle="Last 30 days"
@@ -323,47 +329,40 @@ const DashboardScreen = ({ navigation }) => {
 
         <DashboardCard
           title="Open Tickets"
-          value={String(dashboardData.summary?.open_tickets || 0)}
+          value={dashboardData.summary?.open_tickets 
+            ? String(dashboardData.summary.open_tickets) 
+            : "0"}
           icon="construct-outline"
           color="#e67e22"
           subtitle="Pending resolution"
           trend={dashboardData.summary?.tickets_trend}
           loading={isLoading}
         />
-      </View>
-
-      {/* Occupancy Chart */}
+      </View>      {/* Charts Section */}
       <OccupancyChart 
         occupancyData={chartData.occupancy} 
         loading={chartsLoading} 
       />
 
-      {/* Revenue Chart */}
       <RevenueChart 
         revenueData={chartData.revenue} 
         loading={chartsLoading} 
-      />
-
-      {/* Payment Status Chart */}
-      <PaymentStatusChart 
+      />      <PaymentStatusChart 
         paymentData={chartData.payments} 
         loading={chartsLoading} 
       />
 
-      {/* Maintenance Chart */}
       <MaintenanceChart 
         maintenanceData={chartData.maintenance} 
         loading={chartsLoading} 
-      />
-
-      {/* Recent Activity Section */}
+      />{/* Recent Activity Section */}
       <View style={styles.card}>
         <View style={styles.cardHeader}>
           <Ionicons name="time-outline" size={24} color="#2c3e50" />
           <Text style={styles.cardTitle}>Recent Activity</Text>
         </View>
         
-        {dashboardData.tickets.length > 0 && (
+        {dashboardData.tickets && dashboardData.tickets.length > 0 && (
           <>
             <Text style={styles.sectionTitle}>Latest Tickets</Text>
             {dashboardData.tickets.slice(0, 3).map((ticket) => (
@@ -372,12 +371,13 @@ const DashboardScreen = ({ navigation }) => {
                 style={styles.recentItem}
                 onPress={() => navigation.navigate('TicketDetail', { ticketId: ticket.id })}
               >
-                <View style={styles.priorityIndicator(ticket.priority || 'low')} />                <View style={styles.recentItemContent}>
+                <View style={styles.priorityIndicator(ticket.priority || 'low')} />
+                <View style={styles.recentItemContent}>
                   <Text style={styles.recentItemTitle} numberOfLines={1}>
-                    {String(ticket.title || 'Untitled Ticket')}
+                    {ticket.title ? String(ticket.title) : 'Untitled Ticket'}
                   </Text>
                   <Text style={styles.recentItemSubtitle} numberOfLines={1}>
-                    {String(ticket.unit || 'No Unit')} • {String(ticket.status || 'Unknown Status')}
+                    {ticket.unit ? String(ticket.unit) : 'No Unit'} • {ticket.status ? String(ticket.status) : 'Unknown Status'}
                   </Text>
                 </View>
                 <Ionicons name="chevron-forward" size={16} color="#bdc3c7" />
@@ -386,44 +386,49 @@ const DashboardScreen = ({ navigation }) => {
           </>
         )}
 
-        {dashboardData.pendingPayments.length > 0 && (
+        {dashboardData.pendingPayments && dashboardData.pendingPayments.length > 0 && (
           <>
             <Text style={styles.sectionTitle}>Pending Payments</Text>
             {dashboardData.pendingPayments.slice(0, 3).map((payment) => (
               <View key={payment.id} style={styles.recentItem}>
                 <View style={[styles.priorityIndicator(), { backgroundColor: '#f39c12' }]} />
-                <View style={styles.recentItemContent}>                  <Text style={styles.recentItemTitle}>
-                    {String(payment.tenant_name || 'Unknown Tenant')}
+                <View style={styles.recentItemContent}>
+                  <Text style={styles.recentItemTitle}>
+                    {payment.tenant_name ? String(payment.tenant_name) : 'Unknown Tenant'}
                   </Text>
                   <Text style={styles.recentItemSubtitle}>
-                    ${Number(payment.amount || 0).toLocaleString()} • Due: {new Date(payment.due_date).toLocaleDateString()}
+                    {payment.amount ? `$${Number(payment.amount).toLocaleString()}` : '$0'} • Due: {payment.due_date ? new Date(payment.due_date).toLocaleDateString() : 'Unknown'}
                   </Text>
                 </View>
-                <Text style={styles.amountText}>${Number(payment.amount || 0).toLocaleString()}</Text>
+                <Text style={styles.amountText}>{payment.amount ? `$${Number(payment.amount).toLocaleString()}` : '$0'}</Text>
               </View>
             ))}
           </>
         )}
 
-        {dashboardData.tickets.length === 0 && dashboardData.pendingPayments.length === 0 && (
+        {(!dashboardData.tickets || dashboardData.tickets.length === 0) && 
+         (!dashboardData.pendingPayments || dashboardData.pendingPayments.length === 0) && (
           <Text style={styles.emptyText}>No recent activity</Text>
         )}
-      </View>
-
-      {/* SMS Analytics */}
+      </View>      {/* SMS Analytics Section */}
       {dashboardData.summary && dashboardData.summary.recent_sms_count > 0 && (
         <View style={styles.card}>
           <View style={styles.cardHeader}>
             <Ionicons name="chatbox-outline" size={24} color="#2c3e50" />
             <Text style={styles.cardTitle}>SMS Communications</Text>
           </View>
-          <View style={styles.analyticsRow}>            <View style={styles.analyticItem}>
+          <View style={styles.analyticsRow}>
+            <View style={styles.analyticItem}>
               <Text style={styles.analyticLabel}>Messages Sent</Text>
-              <Text style={styles.analyticValue}>{String(dashboardData.summary.recent_sms_count || 0)}</Text>
+              <Text style={styles.analyticValue}>
+                {dashboardData.summary.recent_sms_count ? String(dashboardData.summary.recent_sms_count) : '0'}
+              </Text>
             </View>
             <View style={styles.analyticItem}>
               <Text style={styles.analyticLabel}>Delivery Rate</Text>
-              <Text style={styles.analyticValue}>{String(dashboardData.summary.sms_delivery_rate || 0)}%</Text>
+              <Text style={styles.analyticValue}>
+                {dashboardData.summary.sms_delivery_rate ? `${String(dashboardData.summary.sms_delivery_rate)}%` : '0%'}
+              </Text>
             </View>
           </View>
         </View>

@@ -68,6 +68,8 @@ const TenantsScreen = ({ navigation }) => {
     
     try {
       const response = await fetchAllTenants(forceRefresh, page);
+
+      console.log('Fetch Tenants Response:', response);
       
       if (response.success) {
         // Process and format tenant data if needed
@@ -234,12 +236,11 @@ const TenantsScreen = ({ navigation }) => {
         selectedTenantId: tenant.id
       });
     } else {
-      // If we don't have property/unit info, just show tenant details in an alert for now
-      // This could be replaced with a dedicated TenantDetail screen in the future
-      Alert.alert(
-        tenant?.name || 'Tenant',
-        `Phone: ${tenant?.phone_number || 'N/A'}\nEmail: ${tenant?.email || 'N/A'}\nMove-in Date: ${tenant?.move_in_date ? new Date(tenant.move_in_date).toLocaleDateString() : 'N/A'}`
-      );
+      // Navigate to the dedicated TenantDetails screen
+      navigation.navigate('TenantDetails', {
+        tenantId: tenant.id,
+        tenantData: tenant
+      });
     }
   };
   const handleAddTenant = () => {

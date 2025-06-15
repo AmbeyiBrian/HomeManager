@@ -1,6 +1,12 @@
-# Welcome to your Expo app 👋
+# HomeManager Mobile App
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+This is an [Expo](https://expo.dev) based React Native application for property management.
+
+## Recent Updates
+
+- **June 2025**: [AuthContext Refactoring](./AUTH_REFACTORING.md) - Modularized the large AuthContext.js file
+- **May 2025**: [QR Code Manager](./QR_CODE_MANAGER_DOCUMENTATION.md) - Added QR code functionality
+- **April 2025**: [Property Detail Fix](./PROPERTY_DETAIL_FIX_SUMMARY.md) - Fixed property detail screen issues
 
 ## Get started
 

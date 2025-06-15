@@ -85,20 +85,6 @@ const TicketDetailScreen = ({ route, navigation }) => {
         setRefreshing(false);
       }, 1000);
       
-      // Example of how the actual API call would look:
-      /*
-      const { getTicketById } = useAuth();
-      const response = await getTicketById(ticketId);
-      
-      if (response.success) {
-        setTicket(response.data);
-      } else {
-        Alert.alert('Error', 'Failed to load ticket details');
-        console.error('Failed to load ticket:', response.error);
-      }
-      setLoading(false);
-      setRefreshing(false);
-      */
       
     } catch (error) {
       console.error('Error fetching ticket details:', error);

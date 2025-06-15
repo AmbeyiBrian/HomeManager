@@ -18,7 +18,8 @@ class LeaseSerializer(serializers.ModelSerializer):
         return {
             'unit_number': obj.unit.unit_number,
             'floor': obj.unit.floor,
-            'monthly_rent': str(obj.unit.monthly_rent)
+            'monthly_rent': str(obj.unit.monthly_rent),
+            'security_deposit': str(obj.unit.security_deposit) 
         }
     
     def get_property_name(self, obj):
@@ -41,12 +42,12 @@ class TenantSerializer(serializers.ModelSerializer):
                  'property_name', 'move_in_date', 'move_out_date', 
                  'emergency_contact', 'added_at', 'active_lease']
         read_only_fields = ['id', 'added_at']
-    
     def get_unit_details(self, obj):
         return {
             'unit_number': obj.unit.unit_number,
             'floor': obj.unit.floor,
-            'monthly_rent': str(obj.unit.monthly_rent)
+            'monthly_rent': str(obj.unit.monthly_rent),
+            'security_deposit': str(obj.unit.security_deposit)
         }
     
     def get_property_name(self, obj):

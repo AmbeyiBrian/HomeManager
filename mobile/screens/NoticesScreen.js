@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, 
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
+import NoticeItem from '../components/NoticeItem';
 
 const NoticesScreen = ({ navigation, route }) => {
   // Extract propertyFilter from route params if available
@@ -55,16 +56,20 @@ const NoticesScreen = ({ navigation, route }) => {
     if (!isRefresh) setLoading(true);
     setError(null);
     try {
-      // Call the API function from context
-      const result = await fetchAllNotices({ 
-        forceRefresh: isRefresh,
-        archived: false, // Only show non-archived notices by default
-        propertyId: propertyFilter // Add property filter if it exists
-      });
+      const propertyId = propertyFilter !== 'all' ? propertyFilter : null;
+      
+      // Call the API function from context with pagination parameters
+      const result = await fetchAllNotices(
+        isRefresh || true, // forceRefresh
+        1, // page (first page)
+        20, // pageSize
+        null, // status filter
+        propertyId // property filter
+      );
       
       if (result.success) {
         setNotices(result.data);
-        setNextPageUrl(result.nextPageUrl);
+        setNextPageUrl(result.pagination?.nextPageUrl || null);
         
         if (result.fromCache && !isOffline) {
           setError('Using cached data. Pull down to refresh.');
@@ -74,7 +79,8 @@ const NoticesScreen = ({ navigation, route }) => {
       }
     } catch (e) {
       console.error("Failed to fetch notices:", e);
-      setError('Failed to fetch notices. Please try again.');    } finally {
+      setError('Failed to fetch notices. Please try again.');
+    } finally {
       if (!isRefresh) setLoading(false);
     }
   }, [fetchAllNotices, isOffline, propertyFilter]);
@@ -84,16 +90,24 @@ const NoticesScreen = ({ navigation, route }) => {
     if (nextPageUrl && !isLoadingMore) {
       setIsLoadingMore(true);
       try {
-        const result = await fetchAllNotices({ 
-          nextPageUrl,
-          propertyId: propertyFilter // Add property filter if it exists
-        });
+        const propertyId = propertyFilter !== 'all' ? propertyFilter : null;
+        
+        const result = await fetchAllNotices(
+          false, // don't force refresh
+          undefined, // page (will be ignored with nextPageUrl)
+          20, // pageSize
+          null, // status filter
+          propertyId, // property filter
+          nextPageUrl // nextPageUrl for pagination
+        );
+        
         if (result.success) {
           setNotices(prevNotices => [...prevNotices, ...result.data]);
-          setNextPageUrl(result.nextPageUrl);
+          setNextPageUrl(result.pagination?.nextPageUrl || null);
         }
       } catch (error) {
-        console.error("Failed to load more notices:", error);      } finally {
+        console.error("Failed to load more notices:", error);
+      } finally {
         setIsLoadingMore(false);
       }
     }
@@ -156,27 +170,51 @@ const NoticesScreen = ({ navigation, route }) => {
     
     return filtered;
   }, [notices, searchText, selectedNoticeType, selectedImportanceFilter, sortBy]);
-
-  const renderNoticeItem = ({ item }) => (
-    <TouchableOpacity 
-      style={styles.noticeItem} 
-      onPress={() => navigation.navigate('NoticeDetail', { noticeId: item.id, noticeTitle: item.title })}
-    >
-      <View style={styles.noticeIconContainer}>
-        {item.important && <Ionicons name="alert-circle" size={24} color="red" style={styles.icon} />}
-        <Ionicons 
-          name={item.type === 'Maintenance' ? 'build' : item.type === 'Announcement' ? 'megaphone' : 'notifications'} 
-          size={24} 
-          color="#3498db" 
-        />
-      </View>
-      <View style={styles.noticeTextContainer}>
-        <Text style={styles.noticeTitle}>{item.title}</Text>
-        <Text style={styles.noticeDate}>{item.date}</Text>
-      </View>
-      <Ionicons name="chevron-forward" size={24} color="#ccc" />
-    </TouchableOpacity>
-  );
+  // Helper function to get icon name based on notice type
+  const getIconNameByNoticeType = useCallback((noticeType) => {
+    switch (noticeType) {
+      case 'maintenance':
+        return 'build-outline';
+      case 'rent':
+        return 'cash-outline';
+      case 'inspection':
+        return 'clipboard-outline';
+      case 'event':
+        return 'calendar-outline';
+      case 'emergency':
+        return 'alert-circle-outline';
+      case 'policy':
+        return 'document-text-outline';
+      case 'eviction':
+        return 'exit-outline';
+      case 'amenities':
+        return 'fitness-outline';
+      case 'utility':
+        return 'flash-outline';
+      case 'general':
+      default:
+        return 'megaphone-outline';
+    }
+  }, []);
+    const renderNoticeItem = useCallback(({ item }) => {
+    // Handle notice updates from quick actions
+    const handleNoticeUpdate = (updatedNotice) => {
+      setNotices(currentNotices => 
+        currentNotices.map(notice => 
+          notice.id === updatedNotice.id ? updatedNotice : notice
+        )
+      );
+    };
+    
+    return (
+      <NoticeItem
+        notice={item}
+        onPress={() => navigation.navigate('NoticeDetail', { noticeId: item.id, noticeTitle: item.title })}
+        onActionComplete={handleNoticeUpdate}
+        getIconNameByNoticeType={getIconNameByNoticeType}
+      />
+    );
+  }, [navigation, getIconNameByNoticeType]);
   
   // Render search header
   const renderSearchHeader = () => (
@@ -696,11 +734,23 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: '#333',
-  },
-  noticeDate: {
+  },  noticeDate: {
     fontSize: 12,
     color: '#666',
     marginTop: 4,
+  },
+  archivedBadge: {
+    backgroundColor: '#f1f1f1',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginTop: 4,
+    alignSelf: 'flex-start',
+  },
+  archivedText: {
+    fontSize: 10,
+    color: '#777',
+    fontWeight: '500',
   },
   emptyText: {
     textAlign: 'center',
