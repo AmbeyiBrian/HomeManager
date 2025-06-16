@@ -1,6 +1,6 @@
 from rest_framework import viewsets, permissions
-from .models import Tenant, Lease
-from .serializers import TenantSerializer, TenantDetailSerializer, LeaseSerializer
+from .models import Tenant, Lease, TenantComment
+from .serializers import TenantSerializer, TenantDetailSerializer, LeaseSerializer, TenantCommentSerializer
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework import status
@@ -132,6 +132,30 @@ class TenantViewSet(viewsets.ModelViewSet):
         
         return Response(response_data, status=status.HTTP_200_OK)
     
+    @action(detail=True, methods=['post'])
+    def add_comment(self, request, pk=None):
+        """Add a comment to a tenant"""
+        tenant = self.get_object()
+        serializer = TenantCommentSerializer(data={
+            'tenant': tenant.id,
+            'content': request.data.get('content', '')
+        })
+        
+        if serializer.is_valid():
+            # Set the author name to the current user
+            author_name = request.user.get_full_name() or request.user.username
+            serializer.save(author_name=author_name)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(detail=True, methods=['get'])
+    def comments(self, request, pk=None):
+        """Get comments for a specific tenant"""
+        tenant = self.get_object()
+        comments = TenantComment.objects.filter(tenant=tenant).order_by('-created_at')
+        serializer = TenantCommentSerializer(comments, many=True)
+        return Response(serializer.data)
 
 class LeaseViewSet(viewsets.ModelViewSet):
     """ViewSet for viewing and editing Lease instances"""
@@ -174,3 +198,34 @@ class LeaseViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(is_active=is_active_bool)
             
         return queryset
+
+class TenantCommentViewSet(viewsets.ModelViewSet):
+    """ViewSet for viewing and editing tenant comments"""
+    queryset = TenantComment.objects.all()
+    serializer_class = TenantCommentSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        """Filter comments to only show those for tenants in the user's organization"""
+        user = self.request.user
+        if user.is_superuser:
+            return TenantComment.objects.all()
+        
+        # Filter by tenant if provided
+        tenant_id = self.request.query_params.get('tenant', None)
+        queryset = TenantComment.objects.all()
+        
+        if user.organization:
+            queryset = queryset.filter(tenant__unit__property__organization=user.organization)
+        else:
+            return TenantComment.objects.none()
+        
+        if tenant_id:
+            queryset = queryset.filter(tenant_id=tenant_id)
+            
+        return queryset
+    
+    def perform_create(self, serializer):
+        """Set author name when creating a comment"""
+        author_name = self.request.user.get_full_name() or self.request.user.username
+        serializer.save(author_name=author_name)

@@ -154,17 +154,14 @@ const TenantDetailsScreen = ({ route, navigation }) => {
               {tenant?.unit_details && (
                 <>
                   <View style={styles.divider} />
-                  <View style={styles.unitDetailsList}>                      <View style={styles.unitDetailsRow}>
+                  <View style={styles.unitDetailsList}>                    
+                    <View style={styles.unitDetailsRow}>
                       <Text style={styles.unitDetailLabel}>Floor:</Text>
                       <Text style={styles.unitDetailValue}>{tenant.unit_details?.floor || 'N/A'}</Text>
                     </View>
                     <View style={styles.unitDetailsRow}>
                       <Text style={styles.unitDetailLabel}>Rent Amount:</Text>
                       <Text style={styles.unitDetailValue}>${tenant.unit_details?.monthly_rent || 'N/A'}</Text>
-                    </View>
-                    <View style={styles.unitDetailsRow}>
-                      <Text style={styles.unitDetailLabel}>Security Deposit:</Text>
-                      <Text style={styles.unitDetailValue}>${tenant.unit_details?.security_deposit || 'N/A'}</Text>
                     </View>
                   </View>
                 </>

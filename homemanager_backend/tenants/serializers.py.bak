@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Tenant, Lease
+from .models import Tenant, Lease, TenantComment
 
 class LeaseSerializer(serializers.ModelSerializer):
     """Serializer for the Lease model"""
@@ -30,20 +30,27 @@ class LeaseSerializer(serializers.ModelSerializer):
             return obj.document.url
         return None
 
-
+class TenantCommentSerializer(serializers.ModelSerializer):
+    """Serializer for tenant comments"""
+    
+    class Meta:
+        model = TenantComment
+        fields = ['id', 'tenant', 'author_name', 'content', 'is_staff', 'created_at']
+        read_only_fields = ['id', 'created_at']
 
 class TenantSerializer(serializers.ModelSerializer):
     """Serializer for the Tenant model"""
     unit_details = serializers.SerializerMethodField()
     property_name = serializers.SerializerMethodField()
     active_lease = serializers.SerializerMethodField()
+    comments = TenantCommentSerializer(many=True, read_only=True)
     
     class Meta:
         model = Tenant
         fields = ['id', 'name', 'phone_number', 'email', 'unit', 'unit_details',
                  'property_name', 'move_in_date', 'move_out_date', 
-                 'emergency_contact', 'added_at', 'active_lease',]
-        read_only_fields = ['id', 'added_at']
+                 'emergency_contact', 'added_at', 'active_lease', 'comments']
+        read_only_fields = ['id', 'added_at', 'comments']
     def get_unit_details(self, obj):
         return {
             'unit_number': obj.unit.unit_number,
@@ -67,8 +74,9 @@ class TenantSerializer(serializers.ModelSerializer):
         return None
 
 class TenantDetailSerializer(TenantSerializer):
-    """Detailed serializer for Tenant including leases and comments"""    
+    """Detailed serializer for Tenant including leases and comments"""
     leases = LeaseSerializer(many=True, read_only=True)
+    comments = TenantCommentSerializer(many=True, read_only=True)
     
     class Meta(TenantSerializer.Meta):
         fields = TenantSerializer.Meta.fields + ['leases']

@@ -55,7 +55,6 @@ const TenantsScreen = ({ navigation }) => {
       console.error('Error fetching properties for selection:', error);
     }
   }; // <-- Add this closing brace to end fetchPropertiesForSelection
-
   const fetchTenants = async (forceRefresh = false, page = 1, append = false) => {
     if (page === 1) {
       setLoading(true);
@@ -67,7 +66,18 @@ const TenantsScreen = ({ navigation }) => {
     setError(null);
     
     try {
-      const response = await fetchAllTenants(forceRefresh, page);
+      // Extract any active filters to pass to the API
+      let filterParam = null;
+      let propertyIdParam = null;
+      
+      if (activeFilters.property) {
+        const selectedProperty = availableProperties.find(p => p.name === activeFilters.property);
+        if (selectedProperty) {
+          propertyIdParam = selectedProperty.id;
+        }
+      }
+      
+      const response = await fetchAllTenants(forceRefresh, page, 20, filterParam, propertyIdParam);
 
       console.log('Fetch Tenants Response:', response);
       
@@ -132,9 +142,9 @@ const TenantsScreen = ({ navigation }) => {
     setHasNextPage(false);
     await fetchTenants(true, 1, false);
   };
-  
-  const loadMoreTenants = async () => {
+    const loadMoreTenants = async () => {
     if (!loadingMore && hasNextPage && !isOffline) {
+      console.log('Loading more tenants, page:', currentPage + 1);
       const nextPage = currentPage + 1;
       await fetchTenants(false, nextPage, true);
     }
@@ -644,8 +654,7 @@ const TenantsScreen = ({ navigation }) => {
             <Text style={styles.retryButtonText}>Retry</Text>
           </TouchableOpacity>
         </View>
-      ) : filteredTenants.length > 0 ? (        
-      <FlatList
+      ) : filteredTenants.length > 0 ? (          <FlatList
           data={filteredTenants}
           keyExtractor={(item) => item.id?.toString() || Math.random().toString()}
           renderItem={renderTenantItem}
@@ -658,7 +667,11 @@ const TenantsScreen = ({ navigation }) => {
             />
           }
           onEndReached={loadMoreTenants}
-          onEndReachedThreshold={0.1}
+          onEndReachedThreshold={0.2}
+          initialNumToRender={10}
+          maxToRenderPerBatch={10}
+          windowSize={10}
+          removeClippedSubviews={true}
           ListFooterComponent={() => {
             if (loadingMore) {
               return (

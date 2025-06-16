@@ -1,6 +1,7 @@
 from django.db import models
 import os
 import uuid
+from django.conf import settings
 from properties.models import Unit
 
 def document_upload_path(instance, filename):
@@ -22,6 +23,8 @@ class Tenant(models.Model):
     
     def __str__(self):
         return self.name
+
+
 
 class Lease(models.Model):
     """Model representing a lease agreement"""

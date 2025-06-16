@@ -2,37 +2,71 @@ import axios from 'axios';
 import { API_TENANTS, API_BASE_URL, API_PROPERTIES } from '../../../config/apiConfig';
 import { LOCAL_STORAGE_KEYS } from '../constants';
 
-export default function tenantModule(authState, setAuthState, { cacheDataForOffline, getCachedData, queueOfflineAction }) {
-  // Fetch all tenants with offline support
-  const fetchAllTenants = async (forceRefresh = false) => {
+export default function tenantModule(authState, setAuthState, { cacheDataForOffline, getCachedData, queueOfflineAction }) {  // Fetch all tenants with offline support and pagination
+  const fetchAllTenants = async (forceRefresh = false, page = 1, pageSize = 20, filter = null, propertyId = null, nextPageUrl = null) => {
     try {
-      // If we're offline or we have cached data and aren't forcing refresh
-      if ((authState.isOffline || !forceRefresh) && authState.offlineEnabled) {
+      // If we're offline or we have cached data and aren't forcing refresh (only for first page)
+      if (page === 1 && !filter && !propertyId && !nextPageUrl && (authState.isOffline || !forceRefresh) && authState.offlineEnabled) {
         const cachedData = await getCachedData(LOCAL_STORAGE_KEYS.TENANTS);
         
         if (cachedData) {
           return {
             success: true,
             data: cachedData,
-            fromCache: true
+            fromCache: true,
+            pagination: {
+              hasNext: false,
+              hasPrevious: false,
+              currentPage: 1,
+              totalPages: 1,
+              totalCount: cachedData.length
+            }
           };
         }
       }
       
       // If we're online, make the API call
       if (!authState.isOffline) {
-        const response = await axios.get(`${API_TENANTS}/tenants/`);
-        const data = response.data.results || response.data || [];
+        let url;
         
-        // Cache the data for offline use
-        if (authState.offlineEnabled) {
+        // Use next page URL if provided, otherwise construct the URL with filters
+        if (nextPageUrl) {
+          url = nextPageUrl;
+        } else {
+          url = `${API_TENANTS}/tenants/?page=${page}&page_size=${pageSize}`;
+          
+          if (filter) {
+            url += `&${filter.key}=${filter.value}`;
+          }
+          
+          if (propertyId) {
+            url += `&property=${propertyId}`;
+          }
+        }
+        
+        const response = await axios.get(url);
+        const data = response.data.results || [];
+        
+        // Build pagination information
+        const pagination = {
+          hasNext: !!response.data.next,
+          hasPrevious: !!response.data.previous,
+          currentPage: page,
+          totalCount: response.data.count || data.length,
+          totalPages: Math.ceil((response.data.count || data.length) / pageSize),
+          nextPageUrl: response.data.next
+        };
+        
+        // Cache only the first page with no filters
+        if (page === 1 && !filter && !propertyId && authState.offlineEnabled) {
           await cacheDataForOffline(LOCAL_STORAGE_KEYS.TENANTS, data);
         }
         
         return {
           success: true,
           data,
-          fromCache: false
+          fromCache: false,
+          pagination
         };
       }
       
@@ -52,6 +86,13 @@ export default function tenantModule(authState, setAuthState, { cacheDataForOffl
           success: true,
           data: cachedData,
           fromCache: true,
+          pagination: {
+            hasNext: false,
+            hasPrevious: false,
+            currentPage: 1,
+            totalPages: 1,
+            totalCount: cachedData.length
+          },
           error: error.message
         };
       }

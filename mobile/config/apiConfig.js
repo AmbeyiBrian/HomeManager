@@ -15,8 +15,8 @@ const DEV_CONFIG = {
   IOS_SIMULATOR: 'http://localhost:8000',
   // Local network (for physical devices)
   // Replace with your actual local IP address
-  // LOCAL_NETWORK: 'http://10.5.4.88:8000',
-  LOCAL_NETWORK: 'http://192.169.0.101:8000',
+  LOCAL_NETWORK: 'http://10.5.4.88:8000',
+  // LOCAL_NETWORK: 'http://192.169.0.101:8000',
   // Additional network options for testing
   ALTERNATIVE_NETWORK: 'http://10.5.4.88:8000',
   // LOCALHOST: 'http://127.0.0.1:8000',

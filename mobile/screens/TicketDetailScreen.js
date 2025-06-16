@@ -9,6 +9,8 @@ import {
   Alert,
   Image,
   RefreshControl,
+  TextInput,
+  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
@@ -18,7 +20,9 @@ const TicketDetailScreen = ({ route, navigation }) => {
   const [ticket, setTicket] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const { isOffline } = useAuth();
+  const [commentText, setCommentText] = useState('');
+  const [commentModalVisible, setCommentModalVisible] = useState(false);
+  const [addingComment, setAddingComment] = useState(false);  const { isOffline, addTicketComment, fetchTicketById } = useAuth();
   
   useEffect(() => {
     fetchTicketDetails();
@@ -26,69 +30,21 @@ const TicketDetailScreen = ({ route, navigation }) => {
   
   const fetchTicketDetails = async () => {
     try {
-      // TODO: Replace with actual API call
-      // Mock data for demonstration
-      setTimeout(() => {
-        const mockTicket = {
-          id: ticketId,
-          title: 'Leaking Kitchen Sink',
-          description: 'The kitchen sink has been leaking for two days. Water is collecting in the cabinet underneath and beginning to damage the wood. Please fix as soon as possible.',
-          status: 'in_progress',
-          priority: 'high',
-          created_at: '2024-05-15T14:30:00Z',
-          updated_at: '2024-05-16T09:15:00Z',
-          property: {
-            id: '123',
-            name: 'Green Apartments'
-          },
-          unit: {
-            id: '456',
-            unit_number: '303'
-          },
-          tenant: {
-            id: '789',
-            name: 'Michael Brown',
-            phone_number: '+254734567890'
-          },
-          assignee: {
-            id: '012',
-            name: 'John Maintenance',
-            phone_number: '+254799887766'
-          },
-          images: [
-            'https://placehold.co/600x400?text=Sink+Leak+Photo',
-          ],
-          comments: [
-            {
-              id: '1',
-              text: 'I\'ll be over tomorrow morning to take a look.',
-              created_at: '2024-05-15T16:42:00Z',
-              user: {
-                id: '012',
-                name: 'John Maintenance'
-              }
-            },
-            {
-              id: '2',
-              text: 'Thank you. I\'ll be home after 9am.',
-              created_at: '2024-05-15T17:05:00Z',
-              user: {
-                id: '789',
-                name: 'Michael Brown'
-              }
-            }
-          ]
-        };
-        
-        setTicket(mockTicket);
-        setLoading(false);
-        setRefreshing(false);
-      }, 1000);
+      setLoading(true);
       
+      // Fetch ticket details from the API
+      const response = await fetchTicketById(ticketId);
       
-    } catch (error) {
+      if (response.success) {
+        setTicket(response.data);
+      } else {
+        console.error('Failed to fetch ticket details:', response.error);
+        Alert.alert('Error', 'Failed to load ticket details');
+      }
+        } catch (error) {
       console.error('Error fetching ticket details:', error);
       Alert.alert('Error', 'An unexpected error occurred');
+    } finally {
       setLoading(false);
       setRefreshing(false);
     }
@@ -191,10 +147,77 @@ const TicketDetailScreen = ({ route, navigation }) => {
       ]
     );
   };
-  
-  const handleAddComment = () => {
-    // This would navigate to a comment form screen or show a modal
-    Alert.alert('Add Comment', 'This feature will be implemented soon');
+    const handleAddComment = () => {
+    if (isOffline) {
+      Alert.alert('Offline Mode', 'Cannot add comments while offline.');
+      return;
+    }
+    
+    // Open the comment modal
+    setCommentText('');
+    setCommentModalVisible(true);
+  };
+    const submitComment = async () => {
+    if (!commentText.trim()) {
+      Alert.alert('Error', 'Comment cannot be empty');
+      return;
+    }
+    
+    try {
+      setAddingComment(true);
+      
+      // Call the updated API endpoint to add the comment
+      const response = await addTicketComment(ticket.id, commentText.trim());
+      
+      if (response.success) {
+        // Add the new comment to the ticket state
+        const newComment = response.data;
+        setTicket(prev => ({
+          ...prev,
+          comments: [
+            ...prev.comments,
+            {
+              id: newComment.id || Date.now().toString(),
+              // Map comment field from TicketComment to text field for the UI
+              text: newComment.comment || commentText.trim(),
+              created_at: newComment.created_at || new Date().toISOString(),
+              user: {
+                id: 'current_user',
+                name: newComment.author_name || 'You'
+              }
+            }
+          ]
+        }));
+        
+        // Close the modal
+        setCommentModalVisible(false);
+        setCommentText('');
+        
+        // Refresh ticket details to ensure we have the latest data
+        setTimeout(() => {
+          fetchTicketDetails();
+        }, 500);      } else {
+        // Log the detailed error information
+        console.error('Error details:', response.error);
+        Alert.alert('Error', 
+          typeof response.error === 'object' 
+            ? JSON.stringify(response.error) 
+            : (response.error || 'Failed to add comment')
+        );
+      }
+    } catch (error) {
+      console.error('Error adding comment:', error);
+      // Log more details about the error
+      if (error.response) {
+        console.error('Error response data:', error.response.data);
+        console.error('Error response status:', error.response.status);
+        Alert.alert('Error', JSON.stringify(error.response.data) || 'An unexpected error occurred');
+      } else {
+        Alert.alert('Error', 'An unexpected error occurred');
+      }
+    } finally {
+      setAddingComment(false);
+    }
   };
   
   if (loading) {
@@ -353,8 +376,7 @@ const TicketDetailScreen = ({ route, navigation }) => {
           <Text style={styles.noComments}>No comments yet</Text>
         )}
       </View>
-      
-      {/* Action Buttons */}
+        {/* Action Buttons */}
       {ticket.status !== 'resolved' && (
         <View style={styles.actionButtons}>
           <Text style={styles.actionLabel}>Update Status:</Text>
@@ -384,6 +406,54 @@ const TicketDetailScreen = ({ route, navigation }) => {
           </View>
         </View>
       )}
+      
+      {/* Comment Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={commentModalVisible}
+        onRequestClose={() => setCommentModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Add Comment</Text>
+              <TouchableOpacity 
+                onPress={() => setCommentModalVisible(false)}
+                disabled={addingComment}
+              >
+                <Ionicons name="close" size={24} color="#333" />
+              </TouchableOpacity>
+            </View>
+            
+            <View style={styles.modalBody}>
+              <TextInput
+                style={styles.commentInput}
+                placeholder="Write your comment here..."
+                value={commentText}
+                onChangeText={setCommentText}
+                multiline
+                autoFocus
+              />
+              
+              <TouchableOpacity 
+                style={styles.submitCommentButton}
+                onPress={submitComment}
+                disabled={addingComment || !commentText.trim()}
+              >
+                {addingComment ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <>
+                    <Ionicons name="send" size={20} color="#fff" />
+                    <Text style={styles.submitCommentText}>Submit</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 };
@@ -617,11 +687,65 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  actionButtonText: {
+  },  actionButtonText: {
     color: '#fff',
     fontWeight: 'bold',
     fontSize: 14,
+  },
+  // Comment Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingBottom: 25,
+    maxHeight: '60%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#2c3e50',
+  },
+  modalBody: {
+    padding: 20,
+  },
+  commentInput: {
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+    padding: 15,
+    paddingTop: 15,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    fontSize: 16,
+    minHeight: 120,
+    textAlignVertical: 'top',
+    marginBottom: 15,
+  },
+  submitCommentButton: {
+    backgroundColor: '#3498db',
+    borderRadius: 8,
+    padding: 12,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  submitCommentText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
+    marginLeft: 8,
   },
 });
 
